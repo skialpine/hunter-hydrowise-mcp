@@ -41,7 +41,6 @@ export function serializeZone(zone: Zone): Record<string, unknown> {
     id: zone.id,
     name: zone.name,
     number: zone.number.value,
-    suspended_until: zone.status.suspendedUntil?.value ?? null,
   };
 }
 

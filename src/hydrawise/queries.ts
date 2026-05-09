@@ -23,9 +23,6 @@ export interface Zone {
   id: number;
   name: string;
   number: { value: number };
-  status: {
-    suspendedUntil: { value: string } | null;
-  };
 }
 
 export interface StatusCodeAndSummary {
@@ -86,6 +83,12 @@ export const CONTROLLER_QUERY = /* GraphQL */ `
   }
 `;
 
+/** Minimal bulk zones query. We deliberately keep this small because the
+ *  upstream `Controller.zones { ... }` fan-out 500s on accounts with many
+ *  zones when richer fields are requested (in particular `status.lastRun`
+ *  and `status.nextRun` are declared `DateTime!` but are sometimes null
+ *  upstream). Richer per-zone reads go through `get_zone` / `get_zone_settings`
+ *  which query one zone at a time and are reliable. */
 export const ZONES_QUERY = /* GraphQL */ `
   query Zones($controllerId: Int!) {
     controller(controllerId: $controllerId) {
@@ -94,17 +97,6 @@ export const ZONES_QUERY = /* GraphQL */ `
         name
         number {
           value
-        }
-        status {
-          suspendedUntil {
-            value
-          }
-          lastRun {
-            value
-          }
-          nextRun {
-            value
-          }
         }
       }
     }
@@ -118,11 +110,6 @@ export const ZONE_QUERY = /* GraphQL */ `
       name
       number {
         value
-      }
-      status {
-        suspendedUntil {
-          value
-        }
       }
     }
   }
