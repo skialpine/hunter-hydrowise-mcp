@@ -17,9 +17,13 @@ const ZoneIdInput = { zone_id: z.number().int() };
 
 const MonitoringMethodEnum = z.enum(['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const);
 
+// Required fields match `updateZoneAdvanced`'s upstream `Int!` / `String!` /
+// `[Int]!` arguments. Everything else is declared optional so the AI can
+// omit a field instead of typing out `: null` for each — when omitted, the
+// tool dispatches `null` to the mutation, and Hydrawise applies its
+// schema-level default (e.g. `cycleSoakEnable = false`, `factors = []`).
 const ZoneWritableShape = {
   zone_id: z.number().int(),
-  icon: z.number().int().nullable(),
   name: z.string(),
   number: z.number().int(),
   watering_mode: z.number().int(),
@@ -27,22 +31,23 @@ const ZoneWritableShape = {
   schedule_adjustment_ids: z.array(z.number().int()),
   watering_adjustment: z.number().int(),
   watering_type: z.number().int(),
-  run_time: z.number().int().nullable(),
   watering_frequency_mode: z.number().int(),
-  fixed_watering_frequency: z.number().int().nullable(),
-  smart_watering_frequency: z.number().int().nullable(),
-  virtual_solar_sync_watering_frequency: z.number().int().nullable(),
-  // updateZoneAdvanced declares this as Boolean (vs Int on the deprecated updateZone).
-  run_next_available_start_time: z.boolean().nullable(),
-  pre_configured_watering_schedule_id: z.number().int().nullable(),
-  // updateZoneAdvanced declares this as Boolean (vs Int on the deprecated updateZone).
-  cycle_soak_enable: z.boolean().nullable(),
-  cycle_custom_time: z.number().int().nullable(),
-  soak_custom_time: z.number().int().nullable(),
-  factors: z.array(z.number().int()).nullable(),
-  sensor_ids: z.array(z.number().int()).nullable(),
-  reusable_schedule: z.boolean().nullable(),
-  reusable_schedule_name: z.string().nullable(),
+  icon: z.number().int().nullable().optional(),
+  run_time: z.number().int().nullable().optional(),
+  fixed_watering_frequency: z.number().int().nullable().optional(),
+  smart_watering_frequency: z.number().int().nullable().optional(),
+  virtual_solar_sync_watering_frequency: z.number().int().nullable().optional(),
+  // updateZoneAdvanced declares run_next_available_start_time and
+  // cycle_soak_enable as Boolean (vs Int on the deprecated updateZone).
+  run_next_available_start_time: z.boolean().nullable().optional(),
+  pre_configured_watering_schedule_id: z.number().int().nullable().optional(),
+  cycle_soak_enable: z.boolean().nullable().optional(),
+  cycle_custom_time: z.number().int().nullable().optional(),
+  soak_custom_time: z.number().int().nullable().optional(),
+  factors: z.array(z.number().int()).nullable().optional(),
+  sensor_ids: z.array(z.number().int()).nullable().optional(),
+  reusable_schedule: z.boolean().nullable().optional(),
+  reusable_schedule_name: z.string().nullable().optional(),
   flow_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   flow_monitoring_value: z.number().nullable().optional(),
@@ -355,8 +360,33 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
     async (input) =>
       runTool(async () => {
         const { preview, ...partial } = input;
+        // Fill `null` for every optional field the caller omitted, so the api
+        // layer (and graphql-request) always sees an explicit value.
         const payload = {
-          ...partial,
+          zone_id: partial.zone_id,
+          name: partial.name,
+          number: partial.number,
+          watering_mode: partial.watering_mode,
+          global_master_valve: partial.global_master_valve,
+          schedule_adjustment_ids: partial.schedule_adjustment_ids,
+          watering_adjustment: partial.watering_adjustment,
+          watering_type: partial.watering_type,
+          watering_frequency_mode: partial.watering_frequency_mode,
+          icon: partial.icon ?? null,
+          run_time: partial.run_time ?? null,
+          fixed_watering_frequency: partial.fixed_watering_frequency ?? null,
+          smart_watering_frequency: partial.smart_watering_frequency ?? null,
+          virtual_solar_sync_watering_frequency:
+            partial.virtual_solar_sync_watering_frequency ?? null,
+          run_next_available_start_time: partial.run_next_available_start_time ?? null,
+          pre_configured_watering_schedule_id: partial.pre_configured_watering_schedule_id ?? null,
+          cycle_soak_enable: partial.cycle_soak_enable ?? null,
+          cycle_custom_time: partial.cycle_custom_time ?? null,
+          soak_custom_time: partial.soak_custom_time ?? null,
+          factors: partial.factors ?? null,
+          sensor_ids: partial.sensor_ids ?? null,
+          reusable_schedule: partial.reusable_schedule ?? null,
+          reusable_schedule_name: partial.reusable_schedule_name ?? null,
           flow_monitoring_method: partial.flow_monitoring_method ?? null,
           current_monitoring_method: partial.current_monitoring_method ?? null,
           flow_monitoring_value: partial.flow_monitoring_value ?? null,
