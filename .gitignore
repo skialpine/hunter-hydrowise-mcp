@@ -37,3 +37,6 @@ snapshots
 .vscode/
 .idea/
 .DS_Store
+
+# Claude hook state (per-session, not committed)
+.claude/hooks/.last-reviewed-hash
