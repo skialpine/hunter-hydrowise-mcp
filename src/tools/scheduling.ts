@@ -216,6 +216,65 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
   );
 
   server.registerTool(
+    'get_program',
+    {
+      description:
+        'Return full detail for a single program. For Standard programs this includes start ' +
+        'times, day pattern, days run, monthly adjustments, periodicity, and per-zone run-time ' +
+        'groups (the "for X minutes" you see in the GUI).',
+      inputSchema: {
+        controller_id: z.number().int(),
+        program_id: z.number().int(),
+        program_type: z.enum(['Standard', 'Advanced'] as const),
+      },
+    },
+    async ({ controller_id, program_id, program_type }) =>
+      runTool(async () => {
+        if (program_type !== 'Standard') {
+          return jsonResult({
+            error: `program_type=${program_type} is not yet supported by get_program; only Standard is implemented`,
+          });
+        }
+        const program = await api.getStandardProgram(controller_id, program_id);
+        if (!program) {
+          return jsonResult({ error: `program ${program_id} not found on controller ${controller_id}` });
+        }
+        return jsonResult({
+          id: program.id,
+          name: program.name,
+          program_type: 'Standard',
+          standard_program_day_pattern: program.standardProgramDayPattern,
+          days_run: program.daysRun,
+          start_times: program.startTimes,
+          ignore_rain_sensor: program.ignoreRainSensor,
+          monthly_watering_adjustments: program.monthlyWateringAdjustments,
+          scheduling_method: program.schedulingMethod,
+          periodicity: program.periodicity
+            ? {
+                period: program.periodicity.period,
+                series_start: program.periodicity.seriesStart?.value ?? null,
+              }
+            : null,
+          applies_to_zones: program.appliesToZones.map((z) => ({
+            id: z.id,
+            number: z.number.value,
+            name: z.name,
+          })),
+          // RunTimeGroup.duration is reported in MINUTES (matches the Hydrawise GUI's
+          // "40 minutes" / "30 minutes" labels). Note: this is different from the v1
+          // control tools' `customRunDuration` which is seconds. Don't confuse them.
+          per_zone_run_times: program.applications.map((a) => ({
+            zone_id: a.zone.id,
+            zone_number: a.zone.number.value,
+            run_time_group_id: a.runTimeGroup.id,
+            run_time_group_name: a.runTimeGroup.name,
+            duration_minutes: a.runTimeGroup.duration,
+          })),
+        });
+      }),
+  );
+
+  server.registerTool(
     'list_programs',
     {
       description:

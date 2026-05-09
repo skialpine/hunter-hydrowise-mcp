@@ -31,8 +31,6 @@ export function serializeZone(zone: Zone): Record<string, unknown> {
     name: zone.name,
     number: zone.number.value,
     suspended_until: zone.status.suspendedUntil?.value ?? null,
-    last_run: zone.status.lastRun?.value ?? null,
-    next_run: zone.status.nextRun?.value ?? null,
   };
 }
 
@@ -49,8 +47,8 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     number: zone.number.value,
     icon: zone.icon?.id ?? null,
     watering_adjustment: zone.wateringSettings?.fixedWateringAdjustment ?? null,
-    cycle_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.cycleTime?.value ?? null,
-    soak_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.soakTime?.value ?? null,
+    cycle_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.cycleDuration ?? null,
+    soak_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.soakDuration ?? null,
     // Fields not directly present on the read shape; the AI must supply these
     // (typically copied from a recent snapshot or set by intent):
     watering_mode: null,

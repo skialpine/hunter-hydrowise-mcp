@@ -11,6 +11,7 @@ import {
   DELETE_STANDARD_PROGRAM_MUTATION,
   ME_QUERY,
   PROGRAM_START_TIMES_QUERY,
+  PROGRAMS_FULL_QUERY,
   PROGRAMS_QUERY,
   REMOVE_WATERING_PROGRAM_MUTATION,
   RESUME_ALL_ZONES_MUTATION,
@@ -37,6 +38,7 @@ import {
   type Controller,
   type ProgramListEntry,
   type ProgramStartTimeRead,
+  type StandardProgramRead,
   type StandardProgramWritable,
   type StatusCodeAndSummary,
   type User,
@@ -198,6 +200,19 @@ export class HydrawiseApi {
       controller: { wateringTriggers: WateringTriggersRead | null } | null;
     }>(WATERING_TRIGGERS_QUERY, { controllerId });
     return data.controller?.wateringTriggers ?? null;
+  }
+
+  async getStandardProgram(
+    controllerId: number,
+    programId: number,
+  ): Promise<StandardProgramRead | null> {
+    const data = await this.client.query<{
+      controller: { programs: (StandardProgramRead & { __typename: string })[] | null } | null;
+    }>(PROGRAMS_FULL_QUERY, { controllerId, includeZoneSpecific: true });
+    const found = (data.controller?.programs ?? []).find(
+      (p) => p.id === programId && p.__typename === 'StandardProgram',
+    );
+    return found ?? null;
   }
 
   async getPrograms(controllerId: number, includeZoneSpecific = true): Promise<ProgramListEntry[]> {

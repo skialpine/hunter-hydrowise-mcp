@@ -18,8 +18,6 @@ export interface Zone {
   number: { value: number };
   status: {
     suspendedUntil: { value: string } | null;
-    lastRun: { value: string } | null;
-    nextRun: { value: string } | null;
   };
 }
 
@@ -107,12 +105,6 @@ export const ZONE_QUERY = /* GraphQL */ `
       }
       status {
         suspendedUntil {
-          value
-        }
-        lastRun {
-          value
-        }
-        nextRun {
           value
         }
       }
@@ -350,14 +342,12 @@ export interface ZoneRichRead {
   wateringSettings: {
     fixedWateringAdjustment: number;
     cycleAndSoakSettings: {
-      cycleTime: { value: number } | null;
-      soakTime: { value: number } | null;
+      cycleDuration: number;
+      soakDuration: number;
     } | null;
   } | null;
   status: {
     suspendedUntil: { value: string } | null;
-    lastRun: { value: string } | null;
-    nextRun: { value: string } | null;
   };
 }
 
@@ -414,26 +404,14 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
         id
       }
       wateringSettings {
-        ... on AdvancedWateringSettings {
-          fixedWateringAdjustment
-          cycleAndSoakSettings {
-            cycleTime {
-              value
-            }
-            soakTime {
-              value
-            }
-          }
+        fixedWateringAdjustment
+        cycleAndSoakSettings {
+          cycleDuration
+          soakDuration
         }
       }
       status {
         suspendedUntil {
-          value
-        }
-        lastRun {
-          value
-        }
-        nextRun {
           value
         }
       }
@@ -522,6 +500,74 @@ export const PROGRAMS_QUERY = /* GraphQL */ `
     }
   }
 `;
+
+/** GraphQL: programs with full Standard detail per program. Filtered by id client-side. */
+export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
+  query ProgramsFull($controllerId: Int!, $includeZoneSpecific: Boolean!) {
+    controller(controllerId: $controllerId) {
+      programs(includeZoneSpecific: $includeZoneSpecific) {
+        __typename
+        id
+        name
+        appliesToZones {
+          id
+          number {
+            value
+          }
+          name
+        }
+        ... on StandardProgram {
+          schedulingMethod {
+            value
+            label
+          }
+          monthlyWateringAdjustments
+          startTimes
+          ignoreRainSensor
+          daysRun
+          standardProgramDayPattern
+          periodicity {
+            period
+            seriesStart {
+              value
+            }
+          }
+          applications {
+            zone {
+              id
+              number {
+                value
+              }
+            }
+            runTimeGroup {
+              id
+              name
+              duration
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export interface StandardProgramRead {
+  __typename: 'StandardProgram';
+  id: number;
+  name: string;
+  appliesToZones: { id: number; number: { value: number }; name: string }[];
+  schedulingMethod: { value: number; label: string | null } | null;
+  monthlyWateringAdjustments: number[];
+  startTimes: string[];
+  ignoreRainSensor: boolean;
+  daysRun: string[];
+  standardProgramDayPattern: string | null;
+  periodicity: { period: number; seriesStart: { value: string } | null } | null;
+  applications: {
+    zone: { id: number; number: { value: number } };
+    runTimeGroup: { id: number; name: string | null; duration: number };
+  }[];
+}
 
 /** GraphQL: program start times via wateringSettings on a zone (best available read path). */
 export const PROGRAM_START_TIMES_QUERY = /* GraphQL */ `

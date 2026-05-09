@@ -129,6 +129,7 @@ describe('streamable HTTP transport', () => {
         // schedule reads
         'get_zone_settings',
         'list_programs',
+        'get_program',
         'list_program_start_times_for_zone',
         'get_seasonal_adjustments',
         'get_watering_triggers',
