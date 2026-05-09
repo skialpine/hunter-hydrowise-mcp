@@ -1154,3 +1154,193 @@ export const REMOVE_WATERING_PROGRAM_MUTATION = /* GraphQL */ `
     removeWateringProgram(wateringProgramId: $wateringProgramId)
   }
 `;
+
+// ----------------------------------------------------------------------------
+// Reporting — added in change `add-watering-reports`.
+// ----------------------------------------------------------------------------
+
+export interface ScheduledZoneRun {
+  id: string;
+  /** DateTime object — use .value for the ISO string */
+  startTime: { value: string };
+  /** DateTime object — use .value for the ISO string */
+  endTime: { value: string };
+  /** minutes */
+  normalDuration: number;
+  /** minutes */
+  duration: number;
+  /** seconds */
+  remainingTime: number;
+  status: { value: number | null; label: string | null };
+}
+
+export interface PastZoneRuns {
+  lastRun: ScheduledZoneRun | null;
+  runs: ScheduledZoneRun[] | null;
+}
+
+export interface RunEventType {
+  id: string;
+  zone: { id: number; name: string };
+  standardProgram: { id: number; name: string } | null;
+  /** DateTime object — use .value for the ISO string */
+  normalStartTime: { value: string } | null;
+  scheduledStartTime: { value: string } | null;
+  reportedStartTime: { value: string } | null;
+  normalEndTime: { value: string } | null;
+  scheduledEndTime: { value: string } | null;
+  reportedEndTime: { value: string } | null;
+  /** seconds */
+  normalDuration: number | null;
+  /** seconds */
+  scheduledDuration: number | null;
+  /** seconds */
+  reportedDuration: number | null;
+  scheduledStatus: { value: number; label: string } | null;
+  reportedStatus: { value: number; label: string } | null;
+  reportedWaterUsage: { value: number | null; unit: string | null } | null;
+  reportedStopReason: { finishedNormally: boolean; description: string[] } | null;
+  reportedCurrent: { value: number | null; unit: string | null } | null;
+}
+
+export interface RunSummaryDetails {
+  totalNormalRunTime: number | null;
+  totalActualRunTime: number | null;
+  totalWaterVolume: { value: number | null; unit: string | null } | null;
+}
+
+const SCHEDULED_ZONE_RUN_FIELDS = /* GraphQL */ `
+  id
+  startTime { value }
+  endTime { value }
+  normalDuration
+  duration
+  remainingTime
+  status {
+    value
+    label
+  }
+`;
+
+const RUN_SUMMARY_FIELDS = /* GraphQL */ `
+  totalNormalRunTime
+  totalActualRunTime
+  totalWaterVolume {
+    value
+    unit
+  }
+`;
+
+export const WATERING_REPORT_QUERY = /* GraphQL */ `
+  query WateringReport($controllerId: Int!, $from: Int!, $until: Int!) {
+    controller(controllerId: $controllerId) {
+      reports {
+        watering(from: $from, until: $until) {
+          runEvent {
+            id
+            zone {
+              id
+              name
+            }
+            standardProgram {
+              id
+              name
+            }
+            normalStartTime { value }
+            scheduledStartTime { value }
+            reportedStartTime { value }
+            normalEndTime { value }
+            scheduledEndTime { value }
+            reportedEndTime { value }
+            normalDuration
+            scheduledDuration
+            reportedDuration
+            scheduledStatus {
+              value
+              label
+            }
+            reportedStatus {
+              value
+              label
+            }
+            reportedWaterUsage {
+              value
+              unit
+            }
+            reportedStopReason {
+              finishedNormally
+              description
+            }
+            reportedCurrent {
+              value
+              unit
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const ZONE_PAST_RUNS_QUERY = /* GraphQL */ `
+  query ZonePastRuns($zoneId: Int!) {
+    zone(zoneId: $zoneId) {
+      pastRuns {
+        lastRun {
+          ${SCHEDULED_ZONE_RUN_FIELDS}
+        }
+        runs {
+          ${SCHEDULED_ZONE_RUN_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY = /* GraphQL */ `
+  query ZoneRunSummaryCurrentWeek($zoneId: Int!) {
+    zone(zoneId: $zoneId) {
+      runSummary {
+        currentWeek {
+          ${RUN_SUMMARY_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const ZONE_RUN_SUMMARY_WEEKLY_QUERY = /* GraphQL */ `
+  query ZoneRunSummaryWeekly($zoneId: Int!, $startWeek: Int!, $endWeek: Int!, $year: Int!) {
+    zone(zoneId: $zoneId) {
+      runSummary {
+        weekly(startWeek: $startWeek, endWeek: $endWeek, year: $year) {
+          ${RUN_SUMMARY_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const ZONE_RUN_SUMMARY_MONTHLY_QUERY = /* GraphQL */ `
+  query ZoneRunSummaryMonthly($zoneId: Int!, $startMonth: Int!, $endMonth: Int!, $year: Int!) {
+    zone(zoneId: $zoneId) {
+      runSummary {
+        monthly(startMonth: $startMonth, endMonth: $endMonth, year: $year) {
+          ${RUN_SUMMARY_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const ZONE_RUN_SUMMARY_ANNUAL_QUERY = /* GraphQL */ `
+  query ZoneRunSummaryAnnual($zoneId: Int!, $startYear: Int!, $endYear: Int!) {
+    zone(zoneId: $zoneId) {
+      runSummary {
+        annual(startYear: $startYear, endYear: $endYear) {
+          ${RUN_SUMMARY_FIELDS}
+        }
+      }
+    }
+  }
+`;

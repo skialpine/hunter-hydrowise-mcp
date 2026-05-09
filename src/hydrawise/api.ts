@@ -32,13 +32,22 @@ import {
   UPDATE_VSS_WATERING_PROGRAM_MUTATION,
   UPDATE_WATERING_TRIGGERS_MUTATION,
   UPDATE_ZONE_ADVANCED_MUTATION,
+  WATERING_REPORT_QUERY,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
+  ZONE_PAST_RUNS_QUERY,
   ZONE_QUERY,
+  ZONE_RUN_SUMMARY_ANNUAL_QUERY,
+  ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY,
+  ZONE_RUN_SUMMARY_MONTHLY_QUERY,
+  ZONE_RUN_SUMMARY_WEEKLY_QUERY,
   ZONES_QUERY,
   type Controller,
+  type PastZoneRuns,
   type ProgramListEntry,
   type ProgramStartTimeRead,
+  type RunEventType,
+  type RunSummaryDetails,
   type SetBaselineValuesPayload,
   type StandardProgramRead,
   type StandardProgramWritable,
@@ -52,6 +61,14 @@ import {
   type ZoneRichRead,
   type ZoneWritable,
 } from './queries.js';
+
+export type RunSummaryPeriod = 'CURRENT_WEEK' | 'WEEK' | 'MONTH' | 'YEAR';
+
+export type RunSummaryArgs =
+  | { period: 'CURRENT_WEEK' }
+  | { period: 'WEEK'; start_week: number; end_week: number; year: number }
+  | { period: 'MONTH'; start_month: number; end_month: number; year: number }
+  | { period: 'YEAR'; start_year: number; end_year: number };
 
 export interface StartZoneOptions {
   durationSeconds?: number;
@@ -375,6 +392,72 @@ export class HydrawiseApi {
       { wateringProgramId: programId },
     );
     return data.removeWateringProgram ?? 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reporting — added in change `add-watering-reports`.
+  // ---------------------------------------------------------------------------
+
+  async getWateringReport(
+    controllerId: number,
+    from: number,
+    until: number,
+  ): Promise<RunEventType[]> {
+    const data = await this.client.query<{
+      controller: {
+        reports: { watering: { runEvent: RunEventType | null }[] } | null;
+      } | null;
+    }>(WATERING_REPORT_QUERY, { controllerId, from, until });
+    return (data.controller?.reports?.watering ?? [])
+      .map((e) => e.runEvent)
+      .filter((e): e is RunEventType => e !== null);
+  }
+
+  async getZonePastRuns(zoneId: number): Promise<PastZoneRuns> {
+    const data = await this.client.query<{
+      zone: { pastRuns: PastZoneRuns | null } | null;
+    }>(ZONE_PAST_RUNS_QUERY, { zoneId });
+    return data.zone?.pastRuns ?? { lastRun: null, runs: null };
+  }
+
+  async getZoneRunSummary(zoneId: number, args: RunSummaryArgs): Promise<RunSummaryDetails | null> {
+    if (args.period === 'CURRENT_WEEK') {
+      const data = await this.client.query<{
+        zone: { runSummary: { currentWeek: RunSummaryDetails | null } | null } | null;
+      }>(ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY, { zoneId });
+      return data.zone?.runSummary?.currentWeek ?? null;
+    }
+    if (args.period === 'WEEK') {
+      const data = await this.client.query<{
+        zone: { runSummary: { weekly: RunSummaryDetails | null } | null } | null;
+      }>(ZONE_RUN_SUMMARY_WEEKLY_QUERY, {
+        zoneId,
+        startWeek: args.start_week,
+        endWeek: args.end_week,
+        year: args.year,
+      });
+      return data.zone?.runSummary?.weekly ?? null;
+    }
+    if (args.period === 'MONTH') {
+      const data = await this.client.query<{
+        zone: { runSummary: { monthly: RunSummaryDetails | null } | null } | null;
+      }>(ZONE_RUN_SUMMARY_MONTHLY_QUERY, {
+        zoneId,
+        startMonth: args.start_month,
+        endMonth: args.end_month,
+        year: args.year,
+      });
+      return data.zone?.runSummary?.monthly ?? null;
+    }
+    // YEAR
+    const data = await this.client.query<{
+      zone: { runSummary: { annual: RunSummaryDetails | null } | null } | null;
+    }>(ZONE_RUN_SUMMARY_ANNUAL_QUERY, {
+      zoneId,
+      startYear: args.start_year,
+      endYear: args.end_year,
+    });
+    return data.zone?.runSummary?.annual ?? null;
   }
 
   private async dispatchWateringProgram(

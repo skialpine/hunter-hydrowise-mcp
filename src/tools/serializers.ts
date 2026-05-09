@@ -1,6 +1,9 @@
 import type {
   Controller,
   ProgramStartTimeRead,
+  RunEventType,
+  RunSummaryDetails,
+  ScheduledZoneRun,
   User,
   WateringTriggersRead,
   Zone,
@@ -129,6 +132,61 @@ export function serializeWateringTriggers(t: WateringTriggersRead): Record<strin
     reduce_water_temperature_enabled: t.reduceWaterTemperatureEnabled,
     reduce_water_temperature: t.reduceWaterTemperature?.value ?? null,
     reduce_water_temperature_percentage: t.reduceWaterTemperaturePercentage,
+  };
+}
+
+export function serializeRunEvent(e: RunEventType): Record<string, unknown> {
+  return {
+    id: e.id,
+    zone_id: e.zone.id,
+    zone_name: e.zone.name,
+    program_id: e.standardProgram?.id ?? null,
+    program_name: e.standardProgram?.name ?? null,
+    normal_start_time: e.normalStartTime?.value ?? null,
+    scheduled_start_time: e.scheduledStartTime?.value ?? null,
+    reported_start_time: e.reportedStartTime?.value ?? null,
+    normal_end_time: e.normalEndTime?.value ?? null,
+    scheduled_end_time: e.scheduledEndTime?.value ?? null,
+    reported_end_time: e.reportedEndTime?.value ?? null,
+    normal_duration_seconds: e.normalDuration ?? null,
+    scheduled_duration_seconds: e.scheduledDuration ?? null,
+    reported_duration_seconds: e.reportedDuration ?? null,
+    scheduled_status: e.scheduledStatus?.label ?? null,
+    reported_status: e.reportedStatus?.label ?? null,
+    reported_water_usage: e.reportedWaterUsage
+      ? { value: e.reportedWaterUsage.value, unit: e.reportedWaterUsage.unit }
+      : null,
+    stop_reason_finished_normally: e.reportedStopReason?.finishedNormally ?? null,
+    stop_reason_description: e.reportedStopReason?.description ?? null,
+    reported_current: e.reportedCurrent
+      ? { value: e.reportedCurrent.value, unit: e.reportedCurrent.unit }
+      : null,
+  };
+}
+
+export function serializeScheduledZoneRun(
+  r: ScheduledZoneRun | null | undefined,
+): Record<string, unknown> | null {
+  if (!r) return null;
+  return {
+    id: r.id,
+    start_time: r.startTime.value,
+    end_time: r.endTime.value,
+    normal_duration_minutes: r.normalDuration,
+    duration_minutes: r.duration,
+    status: r.status.label ?? null,
+  };
+}
+
+export function serializeRunSummaryDetails(
+  d: RunSummaryDetails | null | undefined,
+): Record<string, unknown> {
+  return {
+    total_normal_run_time_minutes: d?.totalNormalRunTime ?? 0,
+    total_actual_run_time_minutes: d?.totalActualRunTime ?? 0,
+    total_water_volume: d?.totalWaterVolume
+      ? { value: d.totalWaterVolume.value, unit: d.totalWaterVolume.unit }
+      : null,
   };
 }
 

@@ -15,6 +15,7 @@ import { SessionRegistry } from './http/sessions.js';
 import { createLogger, type Logger } from './logger.js';
 import { registerBackupTools } from './tools/backup.js';
 import { registerControlTools } from './tools/control.js';
+import { registerReportingTools } from './tools/reporting.js';
 import { registerSchedulingTools } from './tools/scheduling.js';
 import { registerStatusTools } from './tools/status.js';
 
@@ -30,6 +31,7 @@ export function buildMcpServer(api: HydrawiseApi): McpServer {
   registerControlTools(server, api);
   registerSchedulingTools(server, api);
   registerBackupTools(server, api);
+  registerReportingTools(server, api);
   return server;
 }
 

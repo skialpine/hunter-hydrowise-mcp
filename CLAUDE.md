@@ -67,6 +67,7 @@ src/
     control.ts         runtime control tools (start/stop/suspend/resume) — PHYSICAL ACTION
     scheduling.ts      schedule read+write tools — PHYSICAL ACTION with preview support
     backup.ts          dump_controller_snapshot — versioned JSON snapshot
+    reporting.ts       read-only reporting tools (watering report, run history, run summary)
 tests/
   setup.ts             global vitest setup
   unit/                vitest unit tests
@@ -104,6 +105,11 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 
 ### Backup — `src/tools/backup.ts` (read-only)
 - `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 1`) covering user, controller, zones with settings, programs, start times, seasonal adjustments, and watering triggers; no telemetry or run-event history
+
+### Reporting — `src/tools/reporting.ts` (read-only)
+- `get_watering_report` — controller-level run log for a date range (`from`/`until` as ISO-8601 strings → Unix timestamps); returns scheduled vs. reported times, durations in seconds, water usage, stop reason per run event
+- `get_zone_run_history` — past runs for a single zone (`last_run` + `runs[]`); durations in minutes
+- `get_run_summary` — aggregated normal vs. actual run time and water volume for a zone; `period` is one of `CURRENT_WEEK | WEEK | MONTH | YEAR` with period-specific numeric args
 
 ## Key patterns
 
@@ -164,6 +170,7 @@ These bit us during real-account testing and aren't obvious from the schema alon
 - **Read shapes don't match write shapes.** Reads return `SelectedOption { value, label, options }` and `LocalizedValueType { value, unit }` wrappers; mutations take bare `Int`/`Float`. The `tools/serializers.ts` layer unwraps on read; the AI is expected to send unwrapped values on write. **Don't try to round-trip** a raw read result into a mutation — it won't validate.
 - **`MonitoringMethodEnum`** has exactly two values: `MANUAL` (use the supplied baseline) and `LEARN_FROM_NEXT_RUN` (observe and remember on the next zone run). The matching `*MonitoringValue` fields are only meaningful when the method is `MANUAL`.
 - **The pydrawise cached schema at `/tmp/hydrawise.graphql` is outdated.** The live SDL at `schema/hydrawise.live.graphql` is the source of truth; the cached one is missing newer features (`updateZoneAdvanced`, `setBaselineValues`, `learn*FromNextRun` start args, controller notes, ownership transfer, issue muting, etc.). When you suspect the cached schema, run `scripts/probe-schema.ts` to compare.
+- **`DateTime` is an object type, not a scalar.** It has `{ value: String!, timestamp: Int!, largeTimestamp: Float!, timeZone: TimeZone!, relativeTime: String! }`. Any field typed `DateTime` or `DateTime!` in the schema **requires a sub-selection** (e.g. `startTime { value }`). Omitting it gives "Field X of type DateTime must have a sub selection." All reporting timestamp fields (`startTime`, `endTime`, `normalStartTime`, `reportedStartTime`, etc.) are `DateTime` objects — select `{ value }` and unwrap in the serializer.
 - **The OAuth `client_secret` (`zn3CrjglwNV1`)** is the public bundled secret of the Hydrawise mobile app — not a credential we own. Fine to commit.
 
 ## Programming modes (Standard vs Advanced)

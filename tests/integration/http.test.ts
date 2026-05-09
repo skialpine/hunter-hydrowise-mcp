@@ -149,6 +149,10 @@ describe('streamable HTTP transport', () => {
         'delete_watering_program',
         // backup
         'dump_controller_snapshot',
+        // reporting
+        'get_watering_report',
+        'get_zone_run_history',
+        'get_run_summary',
       ].sort(),
     );
   });

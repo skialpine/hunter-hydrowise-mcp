@@ -1,3 +1,4 @@
+import type { RunSummaryArgs } from '../hydrawise/api.js';
 import { ConfigError, isHydrawiseError } from '../errors.js';
 
 const MS_PER_DAY = 86_400_000;
@@ -65,6 +66,41 @@ export async function runTool(handler: () => Promise<ToolResult>): Promise<ToolR
     }
     return errorResult('internal_error', 'unknown error');
   }
+}
+
+export function parseUnixTimestamp(iso: string): number {
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) {
+    throw new ConfigError(`not a valid date string: ${iso}`);
+  }
+  return Math.floor(ms / 1000);
+}
+
+export function validateRunSummaryArgs(
+  period: string,
+  args: Record<string, unknown>,
+): RunSummaryArgs {
+  if (period === 'CURRENT_WEEK') return { period: 'CURRENT_WEEK' };
+  if (period === 'WEEK') {
+    const { start_week, end_week, year } = args;
+    if (start_week == null || end_week == null || year == null) {
+      throw new ConfigError("period 'WEEK' requires start_week, end_week, and year");
+    }
+    return { period: 'WEEK', start_week: start_week as number, end_week: end_week as number, year: year as number };
+  }
+  if (period === 'MONTH') {
+    const { start_month, end_month, year } = args;
+    if (start_month == null || end_month == null || year == null) {
+      throw new ConfigError("period 'MONTH' requires start_month, end_month, and year");
+    }
+    return { period: 'MONTH', start_month: start_month as number, end_month: end_month as number, year: year as number };
+  }
+  // YEAR
+  const { start_year, end_year } = args;
+  if (start_year == null || end_year == null) {
+    throw new ConfigError("period 'YEAR' requires start_year and end_year");
+  }
+  return { period: 'YEAR', start_year: start_year as number, end_year: end_year as number };
 }
 
 /** When `preview` is true, return the planned mutation as a JSON Tool result
