@@ -8,7 +8,14 @@ export interface Controller {
   id: number;
   name: string | null;
   online: boolean | null;
-  hardware: { serialNumber: string | null } | null;
+  softwareVersion: string | null;
+  programMode: 'STANDARD' | 'ADVANCED' | null;
+  hardware: {
+    serialNumber: string | null;
+    status: string | null;
+    installationTime: { value: string } | null;
+    model: { id: string; name: string; family: { name?: string | null } | null } | null;
+  } | null;
   lastContactTime: { value: string } | null;
 }
 
@@ -36,19 +43,36 @@ export const ME_QUERY = /* GraphQL */ `
   }
 `;
 
+const CONTROLLER_FIELDS = /* GraphQL */ `
+  id
+  name
+  online
+  softwareVersion
+  programMode
+  hardware {
+    serialNumber
+    status
+    installationTime {
+      value
+    }
+    model {
+      id
+      name
+      family {
+        name
+      }
+    }
+  }
+  lastContactTime {
+    value
+  }
+`;
+
 export const CONTROLLERS_QUERY = /* GraphQL */ `
   query Controllers {
     me {
       controllers {
-        id
-        name
-        online
-        hardware {
-          serialNumber
-        }
-        lastContactTime {
-          value
-        }
+        ${CONTROLLER_FIELDS}
       }
     }
   }
@@ -57,15 +81,7 @@ export const CONTROLLERS_QUERY = /* GraphQL */ `
 export const CONTROLLER_QUERY = /* GraphQL */ `
   query Controller($controllerId: Int!) {
     controller(controllerId: $controllerId) {
-      id
-      name
-      online
-      hardware {
-        serialNumber
-      }
-      lastContactTime {
-        value
-      }
+      ${CONTROLLER_FIELDS}
     }
   }
 `;

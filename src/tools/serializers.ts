@@ -22,6 +22,17 @@ export function serializeController(controller: Controller): Record<string, unkn
     online: controller.online,
     serial_number: controller.hardware?.serialNumber ?? null,
     last_contact_time: controller.lastContactTime?.value ?? null,
+    software_version: controller.softwareVersion ?? null,
+    program_mode: controller.programMode ?? null,
+    hardware_status: controller.hardware?.status ?? null,
+    installation_time: controller.hardware?.installationTime?.value ?? null,
+    model: controller.hardware?.model
+      ? {
+          id: controller.hardware.model.id,
+          name: controller.hardware.model.name,
+          family: controller.hardware.model.family?.name ?? null,
+        }
+      : null,
   };
 }
 
