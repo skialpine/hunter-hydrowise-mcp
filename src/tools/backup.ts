@@ -12,7 +12,7 @@ import {
 import { jsonResult, runTool } from './_helpers.js';
 
 const SNAPSHOT_VERSION = 1;
-const PACKAGE_VERSION = '0.2.0';
+const PACKAGE_VERSION = '0.3.0';
 
 const Input = { controller_id: z.number().int() };
 

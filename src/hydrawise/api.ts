@@ -14,6 +14,7 @@ import {
   PROGRAMS_FULL_QUERY,
   PROGRAMS_QUERY,
   REMOVE_WATERING_PROGRAM_MUTATION,
+  SET_BASELINE_VALUES_MUTATION,
   RESUME_ALL_ZONES_MUTATION,
   RESUME_ZONE_MUTATION,
   SEASONAL_ADJUSTMENTS_QUERY,
@@ -30,7 +31,7 @@ import {
   UPDATE_TIME_WATERING_PROGRAM_MUTATION,
   UPDATE_VSS_WATERING_PROGRAM_MUTATION,
   UPDATE_WATERING_TRIGGERS_MUTATION,
-  UPDATE_ZONE_MUTATION,
+  UPDATE_ZONE_ADVANCED_MUTATION,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
   ZONE_QUERY,
@@ -38,6 +39,7 @@ import {
   type Controller,
   type ProgramListEntry,
   type ProgramStartTimeRead,
+  type SetBaselineValuesPayload,
   type StandardProgramRead,
   type StandardProgramWritable,
   type StatusCodeAndSummary,
@@ -55,11 +57,15 @@ export interface StartZoneOptions {
   durationSeconds?: number;
   markRunAsScheduled?: boolean;
   stackRuns?: boolean;
+  learnCurrentFromNextRun?: boolean;
+  learnFlowFromNextRun?: boolean;
 }
 
 export interface StartAllZonesOptions {
   durationSeconds?: number;
   markRunAsScheduled?: boolean;
+  learnCurrentFromNextRun?: boolean;
+  learnFlowFromNextRun?: boolean;
 }
 
 export class HydrawiseApi {
@@ -107,6 +113,8 @@ export class HydrawiseApi {
         customRunDuration: options.durationSeconds && options.durationSeconds > 0
           ? options.durationSeconds
           : null,
+        learnCurrentFromNextRun: options.learnCurrentFromNextRun ?? null,
+        learnFlowFromNextRun: options.learnFlowFromNextRun ?? null,
       },
       (data) => data.startZone as StatusCodeAndSummary,
     );
@@ -132,6 +140,8 @@ export class HydrawiseApi {
         customRunDuration: options.durationSeconds && options.durationSeconds > 0
           ? options.durationSeconds
           : null,
+        learnCurrentFromNextRun: options.learnCurrentFromNextRun ?? null,
+        learnFlowFromNextRun: options.learnFlowFromNextRun ?? null,
       },
       (data) => data.startAllZones as StatusCodeAndSummary,
     );
@@ -247,8 +257,22 @@ export class HydrawiseApi {
     return data.zone?.wateringSettings?.programStartTimes ?? [];
   }
 
-  async updateZone(payload: ZoneWritable): Promise<{ id: number } | null> {
-    return this.client.mutateRaw(UPDATE_ZONE_MUTATION, zoneWritableToVars(payload));
+  async updateZoneAdvanced(payload: ZoneWritable): Promise<{ id: number } | null> {
+    return this.client.mutateRaw(UPDATE_ZONE_ADVANCED_MUTATION, zoneWritableToVars(payload));
+  }
+
+  async setBaselineValues(payload: SetBaselineValuesPayload): Promise<StatusCodeAndSummary> {
+    return this.client.mutate(
+      SET_BASELINE_VALUES_MUTATION,
+      {
+        zoneId: payload.zone_id,
+        flowMonitoringMethod: payload.flow_monitoring_method,
+        currentMonitoringMethod: payload.current_monitoring_method,
+        flowMonitoringValue: payload.flow_monitoring_value,
+        currentMonitoringValue: payload.current_monitoring_value,
+      },
+      (data) => data.setBaselineValues as StatusCodeAndSummary,
+    );
   }
 
   async updateSeasonalAdjustments(controllerId: number, factors: number[]): Promise<boolean> {
@@ -398,6 +422,10 @@ function zoneWritableToVars(p: ZoneWritable): Record<string, unknown> {
     sensorIds: p.sensor_ids,
     reusableSchedule: p.reusable_schedule,
     reusableScheduleName: p.reusable_schedule_name,
+    flowMonitoringMethod: p.flow_monitoring_method,
+    currentMonitoringMethod: p.current_monitoring_method,
+    flowMonitoringValue: p.flow_monitoring_value,
+    currentMonitoringValue: p.current_monitoring_value,
   };
 }
 

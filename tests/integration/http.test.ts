@@ -135,6 +135,7 @@ describe('streamable HTTP transport', () => {
         'get_watering_triggers',
         // schedule writes
         'update_zone_settings',
+        'set_zone_baseline',
         'update_seasonal_adjustments',
         'update_watering_triggers',
         'create_program_start_time',

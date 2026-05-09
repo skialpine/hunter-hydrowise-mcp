@@ -15,6 +15,8 @@ const PHYSICAL = 'PHYSICAL ACTION:';
 
 const ZoneIdInput = { zone_id: z.number().int() };
 
+const MonitoringMethodEnum = z.enum(['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const);
+
 const ZoneWritableShape = {
   zone_id: z.number().int(),
   icon: z.number().int().nullable(),
@@ -30,15 +32,30 @@ const ZoneWritableShape = {
   fixed_watering_frequency: z.number().int().nullable(),
   smart_watering_frequency: z.number().int().nullable(),
   virtual_solar_sync_watering_frequency: z.number().int().nullable(),
-  run_next_available_start_time: z.number().int().nullable(),
+  // updateZoneAdvanced declares this as Boolean (vs Int on the deprecated updateZone).
+  run_next_available_start_time: z.boolean().nullable(),
   pre_configured_watering_schedule_id: z.number().int().nullable(),
-  cycle_soak_enable: z.number().int().nullable(),
+  // updateZoneAdvanced declares this as Boolean (vs Int on the deprecated updateZone).
+  cycle_soak_enable: z.boolean().nullable(),
   cycle_custom_time: z.number().int().nullable(),
   soak_custom_time: z.number().int().nullable(),
   factors: z.array(z.number().int()).nullable(),
   sensor_ids: z.array(z.number().int()).nullable(),
   reusable_schedule: z.boolean().nullable(),
   reusable_schedule_name: z.string().nullable(),
+  flow_monitoring_method: MonitoringMethodEnum.nullable().optional(),
+  current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
+  flow_monitoring_value: z.number().nullable().optional(),
+  current_monitoring_value: z.number().nullable().optional(),
+  preview: z.boolean().optional(),
+};
+
+const SetBaselineInput = {
+  zone_id: z.number().int(),
+  flow_monitoring_method: MonitoringMethodEnum,
+  current_monitoring_method: MonitoringMethodEnum,
+  flow_monitoring_value: z.number().nullable().optional(),
+  current_monitoring_value: z.number().nullable().optional(),
   preview: z.boolean().optional(),
 };
 
@@ -332,13 +349,44 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
   server.registerTool(
     'update_zone_settings',
     {
-      description: `${PHYSICAL} apply a full writable zone payload (see \`get_zone_settings\` for shape). Pass \`preview: true\` to see what would be sent without dispatching.`,
+      description: `${PHYSICAL} apply a full writable zone payload (see \`get_zone_settings\` for shape) via the \`updateZoneAdvanced\` mutation. Includes the four optional monitoring fields (\`flow_monitoring_method\`, \`current_monitoring_method\`, \`flow_monitoring_value\`, \`current_monitoring_value\`). Pass \`preview: true\` to see what would be sent without dispatching.`,
       inputSchema: ZoneWritableShape,
     },
     async (input) =>
       runTool(async () => {
-        const { preview, ...payload } = input;
-        return previewOrApply('updateZone', payload, preview, async () => api.updateZone(payload));
+        const { preview, ...partial } = input;
+        const payload = {
+          ...partial,
+          flow_monitoring_method: partial.flow_monitoring_method ?? null,
+          current_monitoring_method: partial.current_monitoring_method ?? null,
+          flow_monitoring_value: partial.flow_monitoring_value ?? null,
+          current_monitoring_value: partial.current_monitoring_value ?? null,
+        };
+        return previewOrApply('updateZoneAdvanced', payload, preview, async () =>
+          api.updateZoneAdvanced(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'set_zone_baseline',
+    {
+      description: `${PHYSICAL} set the flow/current monitoring baselines for a single zone in one call (wraps Hydrawise's \`setBaselineValues\`). Each method must be \`MANUAL\` or \`LEARN_FROM_NEXT_RUN\`; values are only meaningful when the corresponding method is \`MANUAL\`. Pass \`preview: true\` to dry-run.`,
+      inputSchema: SetBaselineInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...rest } = input;
+        const payload = {
+          zone_id: rest.zone_id,
+          flow_monitoring_method: rest.flow_monitoring_method,
+          current_monitoring_method: rest.current_monitoring_method,
+          flow_monitoring_value: rest.flow_monitoring_value ?? null,
+          current_monitoring_value: rest.current_monitoring_value ?? null,
+        };
+        return previewOrApply('setBaselineValues', payload, preview, async () =>
+          api.setBaselineValues(payload),
+        );
       }),
   );
 

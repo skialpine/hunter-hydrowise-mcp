@@ -81,9 +81,9 @@ Control tools (these change physical state — descriptions are prefixed `PHYSIC
 
 | Tool | Args | Effect |
 | --- | --- | --- |
-| `start_zone` | `zone_id`, optional `minutes` | Starts a zone. New runs are stacked behind any in-progress run. |
+| `start_zone` | `zone_id`, optional `minutes`, optional `learn_current_from_next_run` / `learn_flow_from_next_run` | Starts a zone. New runs are stacked behind any in-progress run. The two learn flags pass through to the controller, which observes the corresponding metric during this run. |
 | `stop_zone` | `zone_id` | Stops the zone. |
-| `start_all_zones` | `controller_id`, optional `minutes` | Starts every zone on the controller. |
+| `start_all_zones` | `controller_id`, optional `minutes`, optional `learn_current_from_next_run` / `learn_flow_from_next_run` | Starts every zone on the controller; learn flags apply per-zone. |
 | `stop_all_zones` | `controller_id` | Stops every zone on the controller. |
 | `suspend_zone` | `zone_id`, exactly one of `days` or `until` | Suspends the zone's schedule. `until` is ISO-8601. |
 | `resume_zone` | `zone_id` | Clears any active suspension on the zone. |
@@ -104,7 +104,8 @@ Schedule writes (`PHYSICAL ACTION:`; every tool accepts `preview: true` to dry-r
 
 | Tool | Args | Effect |
 | --- | --- | --- |
-| `update_zone_settings` | full writable zone payload | Apply `updateZone` mutation |
+| `update_zone_settings` | full writable zone payload (incl. optional `flow_monitoring_method`, `current_monitoring_method`, `flow_monitoring_value`, `current_monitoring_value`) | Apply `updateZoneAdvanced` mutation |
+| `set_zone_baseline` | `zone_id`, `flow_monitoring_method`, `current_monitoring_method`, optional `flow_monitoring_value`, optional `current_monitoring_value` | One-shot baseline (re-)training via `setBaselineValues` |
 | `update_seasonal_adjustments` | `controller_id`, 12-int `factors` | Replace seasonal adjustment factors |
 | `update_watering_triggers` | `controller_id` + every trigger field | Apply `updateWateringTriggers` |
 | `create_program_start_time` | `controller_id` + full payload | Create a new program start time |
@@ -148,6 +149,21 @@ The natural workflow:
 5. **Snapshot after** — another `dump_controller_snapshot` records the new desired state for future diffs.
 
 There is no `restore_from_backup` tool. Restore is an AI workflow: the model diffs an old snapshot against current state and calls the matching `update_*` tool per category.
+
+### Flow / current monitoring
+
+Each zone has flow and electrical-current baselines (the GUI's "Advanced > Controller Insights" tab). Two writable fields per zone:
+
+- `*_monitoring_method`: `MANUAL` (use a supplied baseline) or `LEARN_FROM_NEXT_RUN` (observe the next run and remember the result).
+- `*_monitoring_value`: the baseline number (mA for current, e.g. `402`; the rate unit for flow). Only meaningful when method is `MANUAL`.
+
+You can change these three ways:
+
+1. **As part of `update_zone_settings`** (full-payload write).
+2. **Via the dedicated `set_zone_baseline` tool** (one-shot, no full payload required).
+3. **Inline at run-time** by passing `learn_current_from_next_run: true` (or `learn_flow_from_next_run: true`) to `start_zone` / `start_all_zones`. The controller observes during the run and updates the baseline automatically.
+
+`get_zone_settings` and `dump_controller_snapshot` also return a `monitoring_observed` block per zone with the read-only `operating_ranges` and `measured_medians` from the controller. Useful for sanity-checking that a learn-from-next-run actually picked up sensible values.
 
 ## Configuration
 

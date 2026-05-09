@@ -19,7 +19,7 @@ import { registerSchedulingTools } from './tools/scheduling.js';
 import { registerStatusTools } from './tools/status.js';
 
 const PROTOCOL_VERSION = '2025-11-25';
-const PACKAGE_VERSION = '0.2.0';
+const PACKAGE_VERSION = '0.3.0';
 
 export function buildMcpServer(api: HydrawiseApi): McpServer {
   const server = new McpServer({

@@ -6,6 +6,8 @@ import { jsonResult, resolveUntil, runTool } from './_helpers.js';
 const StartZoneInput = {
   zone_id: z.number().int(),
   minutes: z.number().int().min(0).optional(),
+  learn_current_from_next_run: z.boolean().optional(),
+  learn_flow_from_next_run: z.boolean().optional(),
 };
 
 const StopZoneInput = { zone_id: z.number().int() };
@@ -13,6 +15,8 @@ const StopZoneInput = { zone_id: z.number().int() };
 const StartAllZonesInput = {
   controller_id: z.number().int(),
   minutes: z.number().int().min(0).optional(),
+  learn_current_from_next_run: z.boolean().optional(),
+  learn_flow_from_next_run: z.boolean().optional(),
 };
 
 const StopAllZonesInput = { controller_id: z.number().int() };
@@ -39,13 +43,17 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
   server.registerTool(
     'start_zone',
     {
-      description: `${PHYSICAL} starts watering on a single zone. Optional 'minutes' (default: zone's configured run length). New runs are stacked behind any in-progress run rather than replacing it.`,
+      description: `${PHYSICAL} starts watering on a single zone. Optional 'minutes' (default: zone's configured run length). New runs are stacked behind any in-progress run. Optional 'learn_current_from_next_run' / 'learn_flow_from_next_run' tell the controller to observe and remember the zone's electrical current / water flow during this run.`,
       inputSchema: StartZoneInput,
     },
-    async ({ zone_id, minutes }) =>
+    async ({ zone_id, minutes, learn_current_from_next_run, learn_flow_from_next_run }) =>
       runTool(async () => {
         const seconds = minutes && minutes > 0 ? minutes * 60 : 0;
-        const result = await api.startZone(zone_id, { durationSeconds: seconds });
+        const result = await api.startZone(zone_id, {
+          durationSeconds: seconds,
+          learnCurrentFromNextRun: learn_current_from_next_run,
+          learnFlowFromNextRun: learn_flow_from_next_run,
+        });
         return jsonResult(result);
       }),
   );
@@ -63,13 +71,17 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
   server.registerTool(
     'start_all_zones',
     {
-      description: `${PHYSICAL} starts every zone on the given controller. Optional 'minutes' applies to every zone (default: each zone's configured run length).`,
+      description: `${PHYSICAL} starts every zone on the given controller. Optional 'minutes' applies to every zone (default: each zone's configured run length). Optional 'learn_current_from_next_run' / 'learn_flow_from_next_run' tell the controller to observe and remember per-zone electrical current / water flow during this run.`,
       inputSchema: StartAllZonesInput,
     },
-    async ({ controller_id, minutes }) =>
+    async ({ controller_id, minutes, learn_current_from_next_run, learn_flow_from_next_run }) =>
       runTool(async () => {
         const seconds = minutes && minutes > 0 ? minutes * 60 : 0;
-        const result = await api.startAllZones(controller_id, { durationSeconds: seconds });
+        const result = await api.startAllZones(controller_id, {
+          durationSeconds: seconds,
+          learnCurrentFromNextRun: learn_current_from_next_run,
+          learnFlowFromNextRun: learn_flow_from_next_run,
+        });
         return jsonResult(result);
       }),
   );

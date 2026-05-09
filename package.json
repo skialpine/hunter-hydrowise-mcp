@@ -1,6 +1,6 @@
 {
   "name": "hydrowise-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for the Hunter HydroWise (Hydrawise) cloud irrigation platform.",
   "license": "GPL-3.0-or-later",
   "type": "module",

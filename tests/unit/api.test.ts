@@ -57,6 +57,18 @@ describe('HydrawiseApi', () => {
       markRunAsScheduled: false,
       stackRuns: true,
       customRunDuration: 600,
+      learnCurrentFromNextRun: null,
+      learnFlowFromNextRun: null,
+    });
+  });
+
+  it('startZone forwards learn_flow_from_next_run when set', async () => {
+    const harness = fakeClient();
+    const api = new HydrawiseApi(harness.client);
+    await api.startZone(42, { durationSeconds: 600, learnFlowFromNextRun: true });
+    expect(harness.mutateCalls[0]?.variables).toMatchObject({
+      learnFlowFromNextRun: true,
+      learnCurrentFromNextRun: null,
     });
   });
 
@@ -101,5 +113,24 @@ describe('HydrawiseApi', () => {
     const api = new HydrawiseApi(harness.client);
     const result = await api.getZones(7);
     expect(result).toEqual([]);
+  });
+
+  it('setBaselineValues maps fields to camelCase', async () => {
+    const harness = fakeClient();
+    const api = new HydrawiseApi(harness.client);
+    await api.setBaselineValues({
+      zone_id: 42,
+      flow_monitoring_method: 'MANUAL',
+      current_monitoring_method: 'MANUAL',
+      flow_monitoring_value: 1.5,
+      current_monitoring_value: 402,
+    });
+    expect(harness.mutateCalls[0]?.variables).toEqual({
+      zoneId: 42,
+      flowMonitoringMethod: 'MANUAL',
+      currentMonitoringMethod: 'MANUAL',
+      flowMonitoringValue: 1.5,
+      currentMonitoringValue: 402,
+    });
   });
 });

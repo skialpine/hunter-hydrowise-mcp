@@ -118,12 +118,16 @@ export const START_ZONE_MUTATION = /* GraphQL */ `
     $markRunAsScheduled: Boolean
     $stackRuns: Boolean
     $customRunDuration: Int
+    $learnCurrentFromNextRun: Boolean
+    $learnFlowFromNextRun: Boolean
   ) {
     startZone(
       zoneId: $zoneId
       markRunAsScheduled: $markRunAsScheduled
       stackRuns: $stackRuns
       customRunDuration: $customRunDuration
+      learnCurrentFromNextRun: $learnCurrentFromNextRun
+      learnFlowFromNextRun: $learnFlowFromNextRun
     ) {
       status
       summary
@@ -145,11 +149,15 @@ export const START_ALL_ZONES_MUTATION = /* GraphQL */ `
     $controllerId: Int!
     $markRunAsScheduled: Boolean
     $customRunDuration: Int
+    $learnCurrentFromNextRun: Boolean
+    $learnFlowFromNextRun: Boolean
   ) {
     startAllZones(
       controllerId: $controllerId
       markRunAsScheduled: $markRunAsScheduled
       customRunDuration: $customRunDuration
+      learnCurrentFromNextRun: $learnCurrentFromNextRun
+      learnFlowFromNextRun: $learnFlowFromNextRun
     ) {
       status
       summary
@@ -206,7 +214,12 @@ export const RESUME_ALL_ZONES_MUTATION = /* GraphQL */ `
 // Schedule management — added in change `add-schedule-management`.
 // ----------------------------------------------------------------------------
 
-/** Writable shape of a Zone, mirroring the `updateZone` mutation's input. */
+/** Monitoring method enum, matching upstream `MonitoringMethodEnum`. */
+export type MonitoringMethod = 'MANUAL' | 'LEARN_FROM_NEXT_RUN';
+
+/** Writable shape of a Zone, mirroring the `updateZoneAdvanced` mutation's input.
+ *  Note `cycle_soak_enable` and `run_next_available_start_time` are booleans (the
+ *  Advanced mutation differs from the deprecated `updateZone` which used Ints). */
 export interface ZoneWritable {
   zone_id: number;
   icon: number | null;
@@ -222,15 +235,28 @@ export interface ZoneWritable {
   fixed_watering_frequency: number | null;
   smart_watering_frequency: number | null;
   virtual_solar_sync_watering_frequency: number | null;
-  run_next_available_start_time: number | null;
+  run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
-  cycle_soak_enable: number | null;
+  cycle_soak_enable: boolean | null;
   cycle_custom_time: number | null;
   soak_custom_time: number | null;
   factors: number[] | null;
   sensor_ids: number[] | null;
   reusable_schedule: boolean | null;
   reusable_schedule_name: string | null;
+  flow_monitoring_method: MonitoringMethod | null;
+  current_monitoring_method: MonitoringMethod | null;
+  flow_monitoring_value: number | null;
+  current_monitoring_value: number | null;
+}
+
+/** Arguments for `setBaselineValues`. */
+export interface SetBaselineValuesPayload {
+  zone_id: number;
+  flow_monitoring_method: MonitoringMethod;
+  current_monitoring_method: MonitoringMethod;
+  flow_monitoring_value: number | null;
+  current_monitoring_value: number | null;
 }
 
 /** Writable shape of WateringTriggers, mirroring the `updateWateringTriggers` mutation. */
@@ -346,6 +372,16 @@ export interface ZoneRichRead {
       soakDuration: number;
     } | null;
   } | null;
+  monitoringSettings: {
+    operatingRanges: {
+      waterFlowRate: { value: number | null } | null;
+      electricCurrent: { value: number | null } | null;
+    } | null;
+    measuredMedians: {
+      waterFlowRate: { value: number | null } | null;
+      electricCurrent: { value: number | null } | null;
+    } | null;
+  } | null;
   status: {
     suspendedUntil: { value: string } | null;
   };
@@ -408,6 +444,24 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
         cycleAndSoakSettings {
           cycleDuration
           soakDuration
+        }
+      }
+      monitoringSettings {
+        operatingRanges {
+          waterFlowRate {
+            value
+          }
+          electricCurrent {
+            value
+          }
+        }
+        measuredMedians {
+          waterFlowRate {
+            value
+          }
+          electricCurrent {
+            value
+          }
         }
       }
       status {
@@ -595,8 +649,8 @@ export const PROGRAM_START_TIMES_QUERY = /* GraphQL */ `
 
 // Mutations -----------------------------------------------------------------
 
-export const UPDATE_ZONE_MUTATION = /* GraphQL */ `
-  mutation UpdateZone(
+export const UPDATE_ZONE_ADVANCED_MUTATION = /* GraphQL */ `
+  mutation UpdateZoneAdvanced(
     $zoneId: Int!
     $icon: Int
     $name: String!
@@ -611,17 +665,21 @@ export const UPDATE_ZONE_MUTATION = /* GraphQL */ `
     $fixedWateringFrequency: Int
     $smartWateringFrequency: Int
     $virtualSolarSyncWateringFrequency: Int
-    $runNextAvailableStartTime: Int
+    $runNextAvailableStartTime: Boolean
     $preConfiguredWateringScheduleId: Int
-    $cycleSoakEnable: Int
+    $cycleSoakEnable: Boolean
     $cycleCustomTime: Int
     $soakCustomTime: Int
     $factors: [Int]
     $sensorIds: [Int]
     $reusableSchedule: Boolean
     $reusableScheduleName: String
+    $flowMonitoringMethod: MonitoringMethodEnum
+    $currentMonitoringMethod: MonitoringMethodEnum
+    $flowMonitoringValue: Float
+    $currentMonitoringValue: Int
   ) {
-    updateZone(
+    updateZoneAdvanced(
       zoneId: $zoneId
       icon: $icon
       name: $name
@@ -645,8 +703,33 @@ export const UPDATE_ZONE_MUTATION = /* GraphQL */ `
       sensorIds: $sensorIds
       reusableSchedule: $reusableSchedule
       reusableScheduleName: $reusableScheduleName
+      flowMonitoringMethod: $flowMonitoringMethod
+      currentMonitoringMethod: $currentMonitoringMethod
+      flowMonitoringValue: $flowMonitoringValue
+      currentMonitoringValue: $currentMonitoringValue
     ) {
       id
+    }
+  }
+`;
+
+export const SET_BASELINE_VALUES_MUTATION = /* GraphQL */ `
+  mutation SetBaselineValues(
+    $zoneId: Int!
+    $flowMonitoringMethod: MonitoringMethodEnum!
+    $currentMonitoringMethod: MonitoringMethodEnum!
+    $flowMonitoringValue: Float
+    $currentMonitoringValue: Float
+  ) {
+    setBaselineValues(
+      zoneId: $zoneId
+      flowMonitoringMethod: $flowMonitoringMethod
+      currentMonitoringMethod: $currentMonitoringMethod
+      flowMonitoringValue: $flowMonitoringValue
+      currentMonitoringValue: $currentMonitoringValue
+    ) {
+      status
+      summary
     }
   }
 `;

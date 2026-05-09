@@ -63,14 +63,30 @@ src/
     serializers.ts     normalize Hydrawise field names + read→writable translation
     status.ts          read-only status tools
     control.ts         runtime control tools (start/stop/suspend/resume) — PHYSICAL ACTION:
-    scheduling.ts      schedule read+write tools (zone settings, programs, triggers, seasonal adjustments) — writes are PHYSICAL ACTION: with preview support
+    scheduling.ts      schedule read+write tools (zone settings, programs, triggers, seasonal adjustments, monitoring baselines) — writes are PHYSICAL ACTION: with preview support
     backup.ts          dump_controller_snapshot — versioned JSON snapshot
 tests/
   unit/                vitest unit tests
   integration/         supertest integration tests against buildApp()
+schema/
+  hydrawise.live.graphql  authoritative live API schema (introspection snapshot)
+scripts/
+  probe-schema.ts      run introspection + diff vs cached pydrawise schema
 openspec/              spec-driven workflow artifacts
 ```
 
 ## Testing
 
 `npm test` runs vitest. Integration tests use `supertest` against an Express app built via `buildApp()` with a fake `HydrawiseApi`. Unit tests cover config parsing, the OAuth refresh flow, GraphQL client error mapping, helper validation, and credential-leak guards.
+
+## GraphQL schema source of truth
+
+`schema/hydrawise.live.graphql` is captured directly from the live Hydrawise API via introspection. Treat it as authoritative when adding or editing hand-written queries/mutations. The cached pydrawise schema (Lake292 reference) is a useful comparison but is NOT the source of truth — it lags the live API.
+
+To refresh:
+
+```bash
+HYDRAWISE_USERNAME=... HYDRAWISE_PASSWORD=... npx tsx scripts/probe-schema.ts
+```
+
+The script also prints what's new (types / mutations / arguments) vs the cached pydrawise schema at `/tmp/hydrawise.graphql`, useful when investigating GUI features the MCP doesn't yet support.

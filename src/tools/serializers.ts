@@ -47,12 +47,35 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     number: zone.number.value,
     icon: zone.icon?.id ?? null,
     watering_adjustment: zone.wateringSettings?.fixedWateringAdjustment ?? null,
-    // Hydrawise's read schema doesn't expose `cycleSoakEnable` directly — the
-    // mutation accepts it as `Int`, but on read we infer enabled (1) vs
-    // disabled (0) from whether `cycleAndSoakSettings` is present on the zone.
-    cycle_soak_enable: zone.wateringSettings?.cycleAndSoakSettings ? 1 : 0,
+    // Hydrawise's read schema doesn't expose `cycleSoakEnable` directly — we
+    // infer it from whether `cycleAndSoakSettings` is present. Boolean to match
+    // the `updateZoneAdvanced` mutation's argument type.
+    cycle_soak_enable: zone.wateringSettings?.cycleAndSoakSettings ? true : false,
     cycle_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.cycleDuration ?? null,
     soak_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.soakDuration ?? null,
+    // Monitoring fields — read schema doesn't expose the configured method
+    // or value directly, so the writable view returns `null` here. The AI
+    // must supply these explicitly when calling `update_zone_settings` or
+    // `set_zone_baseline`. The `monitoring_observed` block below carries
+    // the read-only operating ranges and measured medians.
+    flow_monitoring_method: null,
+    current_monitoring_method: null,
+    flow_monitoring_value: null,
+    current_monitoring_value: null,
+    monitoring_observed: zone.monitoringSettings
+      ? {
+          operating_ranges: {
+            water_flow_rate: zone.monitoringSettings.operatingRanges?.waterFlowRate?.value ?? null,
+            electric_current:
+              zone.monitoringSettings.operatingRanges?.electricCurrent?.value ?? null,
+          },
+          measured_medians: {
+            water_flow_rate: zone.monitoringSettings.measuredMedians?.waterFlowRate?.value ?? null,
+            electric_current:
+              zone.monitoringSettings.measuredMedians?.electricCurrent?.value ?? null,
+          },
+        }
+      : null,
     // Fields not directly present on the read shape; the AI must supply these
     // (typically copied from a recent snapshot or set by intent):
     watering_mode: null,
