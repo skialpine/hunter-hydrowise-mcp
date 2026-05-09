@@ -108,7 +108,7 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 
 ### Reporting — `src/tools/reporting.ts` (read-only)
 - `get_watering_report` — controller-level run log for a date range (`from`/`until` as ISO-8601 strings → Unix timestamps); returns scheduled vs. reported times, durations in seconds, water usage, stop reason per run event
-- `get_zone_run_history` — past runs for a single zone (`last_run` + `runs[]`); durations in minutes
+- `get_zone_run_history` — past runs for a single zone (`last_run` + `runs[]`). Each entry has `normal_duration_minutes` (program default), `scheduled_duration_minutes` (what the controller was told to run), and `actual_elapsed_seconds` (computed from end−start; smaller than scheduled when a run was cancelled or stopped early)
 - `get_run_summary` — aggregated normal vs. actual run time and water volume for a zone; `period` is one of `CURRENT_WEEK | WEEK | MONTH | YEAR` with period-specific numeric args
 
 ## Key patterns
@@ -156,7 +156,7 @@ Integration tests use `supertest` against `buildApp()` with a fake `HydrawiseApi
 
 These bit us during real-account testing and aren't obvious from the schema alone.
 
-- **`Zone.status.lastRun` / `nextRun` are declared `DateTime!` but actually null** for zones without run history. Selecting them inside `Controller.zones { ... }` causes the bulk fan-out to 500. `ZONES_QUERY` and `ZONE_QUERY` deliberately omit `status` for that reason; richer per-zone state goes through `get_zone_settings` (single zone, reliable).
+- **`Zone.status.lastRun` / `nextRun` are declared `DateTime!` but actually null** for zones without run history. Selecting them inside `Controller.zones { ... }` causes the bulk fan-out to 500. `ZONES_QUERY` omits `status` for that reason; `ZONE_QUERY` (single-zone) keeps the same minimal shape for symmetry. `get_zone` and `list_zones` therefore return only `id/name/number`; richer per-zone state goes through `get_zone_settings` (single zone, full read via `ZONE_FULL_QUERY`).
 - **`Controller.zones { ... }` is slow** on accounts with many zones — sometimes >30s, past Claude Desktop's tool timeout. The request usually succeeds on a second try. If a tool reliably times out on first call, retrying is the right move before debugging.
 - **`updateZone` is `@deprecated`** in favor of `updateZoneAdvanced` (and `createZone` → `createZoneAdvanced`). The Advanced versions have **different argument shapes** for two fields: `cycleSoakEnable` and `runNextAvailableStartTime` are `Boolean` (not `Int`). They also accept four monitoring args (`flowMonitoringMethod`, `currentMonitoringMethod`, `flowMonitoringValue`, `currentMonitoringValue`). Always use Advanced for new write code.
 - **`WateringSettings` is an interface** with two implementations: `AdvancedWateringSettings` (zones with per-zone `programStartTimes` and `advancedProgram`) and `StandardWateringSettings` (zones inside Standard programs, with `standardProgramApplications`). `fixedWateringAdjustment` and `cycleAndSoakSettings` are on the interface itself — no fragment needed for those. Other fields require `... on AdvancedWateringSettings` or `... on StandardWateringSettings` fragments.
@@ -166,6 +166,7 @@ These bit us during real-account testing and aren't obvious from the schema alon
   - `RunTimeGroup.duration` (per-zone-per-program run time on Standard programs) is **minutes**.
   - `customRunDuration` on the `startZone*` mutations is **seconds**.
   - `cycleDuration` / `soakDuration` are **minutes**.
+  - `ScheduledZoneRun.duration` is **scheduled** minutes — what the controller was told to run, NOT what actually elapsed. `serializeScheduledZoneRun` exposes this as `scheduled_duration_minutes` and adds `actual_elapsed_seconds` (computed from `endTime - startTime`) so cancelled / short-stopped runs are visible.
   - When in doubt, check what the GUI shows for the same field and confirm.
 - **Read shapes don't match write shapes.** Reads return `SelectedOption { value, label, options }` and `LocalizedValueType { value, unit }` wrappers; mutations take bare `Int`/`Float`. The `tools/serializers.ts` layer unwraps on read; the AI is expected to send unwrapped values on write. **Don't try to round-trip** a raw read result into a mutation — it won't validate.
 - **`MonitoringMethodEnum`** has exactly two values: `MANUAL` (use the supplied baseline) and `LEARN_FROM_NEXT_RUN` (observe and remember on the next zone run). The matching `*MonitoringValue` fields are only meaningful when the method is `MANUAL`.
@@ -202,9 +203,11 @@ When iterating on tools against a live Claude Desktop session:
 
 If a tool call fails with `Input validation error` for a field you know exists in the new code, the cached schema is stale — restart Claude Desktop.
 
+(Until MCP clients reliably honor `notifications/tools/list_changed`, the restart dance above is the safe default.)
+
 ## Restore-from-backup is intentionally an AI workflow
 
-The snapshot tool (`dump_controller_snapshot`) is read-only and per-controller. There is **no** `restore_from_backup` tool — the design (in `add-schedule-management/design.md`) calls for the AI to diff a snapshot against current state and call the matching `update_*` tool per category. This is the LLM-native pattern: the AI sees every field it's about to change rather than relying on an opaque server-side merge. Don't reintroduce a monolithic restore tool without revisiting that decision.
+The snapshot tool (`dump_controller_snapshot`) is read-only and per-controller. There is **no** `restore_from_backup` tool — the design (in `openspec/changes/archive/2026-05-09-add-schedule-management/design.md`) calls for the AI to diff a snapshot against current state and call the matching `update_*` tool per category. This is the LLM-native pattern: the AI sees every field it's about to change rather than relying on an opaque server-side merge. Don't reintroduce a monolithic restore tool without revisiting that decision.
 
 ## GraphQL schema source of truth
 

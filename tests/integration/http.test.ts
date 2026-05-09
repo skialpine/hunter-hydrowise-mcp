@@ -15,6 +15,13 @@ function fakeClient(): HydrawiseClient {
     async mutate(): Promise<StatusCodeAndSummary> {
       return { status: 'OK', summary: '' };
     },
+    async mutateRaw<TResult>(
+      _document: string,
+      _variables: Variables,
+      extract: (data: Record<string, unknown>) => TResult,
+    ): Promise<TResult> {
+      return extract({});
+    },
   };
 }
 
@@ -59,18 +66,13 @@ async function initialize(app: ReturnType<typeof makeApp>, headers: Record<strin
     .send(INITIALIZE_BODY);
 }
 
-function parseInitResponse(body: string): { sessionId: string | undefined; payload: unknown } {
-  // Streamable HTTP returns SSE by default for an initialize response.
-  // The first `data:` line carries the JSON-RPC response.
+function parseInitResponse(body: string): { payload: unknown } {
   const dataLine = body
     .split('\n')
     .find((l) => l.startsWith('data:'))
     ?.slice('data:'.length)
     .trim();
-  return {
-    sessionId: undefined,
-    payload: dataLine ? JSON.parse(dataLine) : null,
-  };
+  return { payload: dataLine ? JSON.parse(dataLine) : null };
 }
 
 describe('streamable HTTP transport', () => {
@@ -84,7 +86,7 @@ describe('streamable HTTP transport', () => {
     expect(res.status).toBe(200);
     const sessionId = res.headers['mcp-session-id'];
     expect(typeof sessionId).toBe('string');
-    expect(sessionId.length).toBeGreaterThan(0);
+    expect((sessionId ?? '').length).toBeGreaterThan(0);
     const { payload } = parseInitResponse(res.text);
     expect((payload as { result?: { protocolVersion?: string } } | null)?.result?.protocolVersion)
       .toBe('2025-11-25');
@@ -93,7 +95,7 @@ describe('streamable HTTP transport', () => {
   it('lists every expected tool on tools/list', async () => {
     const app = makeApp();
     const init = await initialize(app);
-    const sessionId = init.headers['mcp-session-id'];
+    const sessionId = init.headers['mcp-session-id'] as string;
 
     const res = await request(app)
       .post('/mcp')
@@ -111,13 +113,11 @@ describe('streamable HTTP transport', () => {
     const names = toolsResp.result.tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
-        // v1 status
         'get_user',
         'list_controllers',
         'get_controller',
         'list_zones',
         'get_zone',
-        // v1 control
         'start_zone',
         'stop_zone',
         'start_all_zones',
@@ -126,14 +126,12 @@ describe('streamable HTTP transport', () => {
         'resume_zone',
         'suspend_all_zones',
         'resume_all_zones',
-        // schedule reads
         'get_zone_settings',
         'list_programs',
         'get_program',
         'list_program_start_times_for_zone',
         'get_seasonal_adjustments',
         'get_watering_triggers',
-        // schedule writes
         'update_zone_settings',
         'set_zone_baseline',
         'update_seasonal_adjustments',
@@ -147,9 +145,7 @@ describe('streamable HTTP transport', () => {
         'create_watering_program',
         'update_watering_program',
         'delete_watering_program',
-        // backup
         'dump_controller_snapshot',
-        // reporting
         'get_watering_report',
         'get_zone_run_history',
         'get_run_summary',
@@ -196,7 +192,7 @@ describe('streamable HTTP transport', () => {
   it('every write tool description begins with PHYSICAL ACTION:', async () => {
     const app = makeApp();
     const init = await initialize(app);
-    const sessionId = init.headers['mcp-session-id'];
+    const sessionId = init.headers['mcp-session-id'] as string;
     const res = await request(app)
       .post('/mcp')
       .set('Accept', 'application/json, text/event-stream')
@@ -214,14 +210,12 @@ describe('streamable HTTP transport', () => {
       (t) =>
         t.name.startsWith('update_') ||
         t.name.startsWith('create_') ||
-        (t.name.startsWith('delete_') && t.name !== 'delete_program_start_time') ||
-        t.name === 'delete_program_start_time' ||
-        t.name === 'delete_standard_program' ||
-        t.name === 'delete_watering_program' ||
+        t.name.startsWith('delete_') ||
         t.name.startsWith('start_') ||
         t.name.startsWith('stop_') ||
         t.name.startsWith('suspend_') ||
-        t.name.startsWith('resume_'),
+        t.name.startsWith('resume_') ||
+        t.name === 'set_zone_baseline',
     );
     expect(writeTools.length).toBeGreaterThan(0);
     for (const tool of writeTools) {
@@ -232,7 +226,7 @@ describe('streamable HTTP transport', () => {
   it('terminates a session on DELETE', async () => {
     const app = makeApp();
     const init = await initialize(app);
-    const sessionId = init.headers['mcp-session-id'];
+    const sessionId = init.headers['mcp-session-id'] as string;
 
     const del = await request(app)
       .delete('/mcp')

@@ -6,7 +6,6 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { config as loadDotenv } from 'dotenv';
 import express from 'express';
 import { loadConfig, type Config } from './config.js';
-import { ConfigError } from './errors.js';
 import { Auth } from './hydrawise/auth.js';
 import { HydrawiseApi } from './hydrawise/api.js';
 import { getClient } from './hydrawise/client.js';
@@ -21,18 +20,24 @@ import { registerStatusTools } from './tools/status.js';
 
 const PROTOCOL_VERSION = '2025-11-25';
 const PACKAGE_VERSION = '0.3.0';
+const JSON_RPC_INTERNAL_ERROR = -32603;
 
-export function buildMcpServer(api: HydrawiseApi): McpServer {
+export function buildMcpServer(api: HydrawiseApi, logger?: Logger): McpServer {
   const server = new McpServer({
     name: 'hydrowise-mcp',
     version: PACKAGE_VERSION,
   });
-  registerStatusTools(server, api);
-  registerControlTools(server, api);
-  registerSchedulingTools(server, api);
-  registerBackupTools(server, api);
-  registerReportingTools(server, api);
+  registerStatusTools(server, api, logger);
+  registerControlTools(server, api, logger);
+  registerSchedulingTools(server, api, logger);
+  registerBackupTools(server, api, logger);
+  registerReportingTools(server, api, logger);
   return server;
+}
+
+export interface BuildAppHandle {
+  app: express.Express;
+  sessions: SessionRegistry;
 }
 
 export function buildApp(
@@ -40,13 +45,21 @@ export function buildApp(
   serverFactory: () => McpServer,
   logger: Logger,
 ): express.Express {
+  return buildAppWithSessions(cfg, serverFactory, logger).app;
+}
+
+export function buildAppWithSessions(
+  cfg: Config,
+  serverFactory: () => McpServer,
+  logger: Logger,
+): BuildAppHandle {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
-  app.use(originGuard(cfg.allowedOrigins));
-  app.use(hostGuard(cfg.host, cfg.port));
-  app.use(bearerGuard(cfg.authToken));
+  app.use(originGuard(cfg.allowedOrigins, logger));
+  app.use(hostGuard(cfg.host, cfg.port, logger));
+  app.use(bearerGuard(cfg.authToken, logger));
 
-  const sessions = new SessionRegistry(cfg.sessionTtlSeconds * 1000);
+  const sessions = new SessionRegistry(cfg.sessionTtlSeconds * 1000, logger);
 
   const handler: express.RequestHandler = async (req, res) => {
     const sessionHeader = req.get('mcp-session-id');
@@ -91,8 +104,7 @@ export function buildApp(
           sessions.delete(transport.sessionId);
           logger.info('mcp session closed', { sessionId: transport.sessionId });
         }
-        // sessionServer is captured by this closure; releasing it here lets
-        // GC reclaim the McpServer once the transport is fully unwound.
+        // Don't call sessionServer.close() — Server.close() → transport.close() → onclose recursion. Let GC reclaim it.
       };
       await sessionServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
@@ -124,8 +136,35 @@ export function buildApp(
     res.set('Allow', 'GET, POST, DELETE').status(405).end();
   };
 
-  app.all('/mcp', handler);
-  return app;
+  const wrappedHandler: express.RequestHandler = (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('request handler failed', { message, stack: err instanceof Error ? err.stack : undefined });
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: JSON_RPC_INTERNAL_ERROR, message: `internal error: ${message}` },
+        });
+      } else {
+        res.end();
+      }
+    });
+  };
+
+  app.all('/mcp', wrappedHandler);
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('unhandled middleware error', { message });
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: JSON_RPC_INTERNAL_ERROR, message: `internal error: ${message}` },
+      });
+    }
+  });
+  return { app, sessions };
 }
 
 export async function main(): Promise<void> {
@@ -145,7 +184,7 @@ export async function main(): Promise<void> {
   const logger = createLogger(cfg.logLevel);
   const auth = new Auth(cfg.username, cfg.password);
   const api = new HydrawiseApi(getClient(auth));
-  const app = buildApp(cfg, () => buildMcpServer(api), logger);
+  const { app, sessions } = buildAppWithSessions(cfg, () => buildMcpServer(api, logger), logger);
 
   const httpServer = app.listen(cfg.port, cfg.host, () => {
     process.stderr.write(
@@ -153,30 +192,35 @@ export async function main(): Promise<void> {
     );
   });
 
-  const shutdown = (signal: string) => {
+  let shuttingDown = false;
+  const shutdown = (signal: string, exitCode = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`received ${signal}, shutting down`);
-    httpServer.close(() => {
-      process.exit(0);
-    });
-    setTimeout(() => process.exit(1), 5000).unref();
+    const force = setTimeout(() => process.exit(exitCode === 0 ? 1 : exitCode), 5000);
+    force.unref();
+    sessions
+      .closeAll()
+      .catch((err) => logger.warn('error closing sessions during shutdown', { error: String(err) }))
+      .finally(() => {
+        httpServer.close(() => process.exit(exitCode));
+      });
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('unhandledRejection', (reason) => {
-    process.stderr.write(`unhandled rejection: ${String(reason)}\n`);
-    process.exit(1);
+    logger.error('unhandled rejection', {
+      reason: reason instanceof Error ? reason.stack ?? reason.message : String(reason),
+    });
+    shutdown('unhandledRejection', 1);
   });
   process.on('uncaughtException', (err) => {
-    process.stderr.write(`uncaught exception: ${err.stack ?? err.message}\n`);
-    process.exit(1);
+    logger.error('uncaught exception', { stack: err.stack ?? err.message });
+    shutdown('uncaughtException', 1);
   });
 }
 
 const isMainModule = import.meta.url === `file://${process.argv[1]}`;
 if (isMainModule) {
-  // Using void to satisfy no-floating-promises
   void main();
 }
-
-// Re-export for tests
-export { ConfigError };

@@ -1,3 +1,4 @@
+import { HydrawiseMutationError, HydrawiseNotFoundError } from '../errors.js';
 import type { HydrawiseClient } from './client.js';
 import {
   CONTROLLER_QUERY,
@@ -46,6 +47,7 @@ import {
   type PastZoneRuns,
   type ProgramListEntry,
   type ProgramStartTimeRead,
+  type ProgramStartTimeWritable,
   type RunEventType,
   type RunSummaryDetails,
   type SetBaselineValuesPayload,
@@ -53,7 +55,6 @@ import {
   type StandardProgramWritable,
   type StatusCodeAndSummary,
   type User,
-  type WateringProgramType,
   type WateringProgramWritable,
   type WateringTriggersRead,
   type WateringTriggersWritable,
@@ -100,10 +101,13 @@ export class HydrawiseApi {
     return data.me.controllers ?? [];
   }
 
-  async getController(controllerId: number): Promise<Controller | null> {
+  async getController(controllerId: number): Promise<Controller> {
     const data = await this.client.query<{ controller: Controller | null }>(CONTROLLER_QUERY, {
       controllerId,
     });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
     return data.controller;
   }
 
@@ -112,11 +116,17 @@ export class HydrawiseApi {
       ZONES_QUERY,
       { controllerId },
     );
-    return data.controller?.zones ?? [];
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return data.controller.zones ?? [];
   }
 
-  async getZone(zoneId: number): Promise<Zone | null> {
+  async getZone(zoneId: number): Promise<Zone> {
     const data = await this.client.query<{ zone: Zone | null }>(ZONE_QUERY, { zoneId });
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
     return data.zone;
   }
 
@@ -204,14 +214,15 @@ export class HydrawiseApi {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Schedule management — added in change `add-schedule-management`.
-  // ---------------------------------------------------------------------------
+  // Schedule management
 
-  async getZoneFull(zoneId: number): Promise<ZoneRichRead | null> {
+  async getZoneFull(zoneId: number): Promise<ZoneRichRead> {
     const data = await this.client.query<{ zone: ZoneRichRead | null }>(ZONE_FULL_QUERY, {
       zoneId,
     });
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
     return data.zone;
   }
 
@@ -219,14 +230,20 @@ export class HydrawiseApi {
     const data = await this.client.query<{
       controller: { settings: { offline: { seasonalAdjustments: number[] | null } } | null } | null;
     }>(SEASONAL_ADJUSTMENTS_QUERY, { controllerId });
-    return data.controller?.settings?.offline?.seasonalAdjustments ?? [];
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return data.controller.settings?.offline?.seasonalAdjustments ?? [];
   }
 
   async getWateringTriggers(controllerId: number): Promise<WateringTriggersRead | null> {
     const data = await this.client.query<{
       controller: { wateringTriggers: WateringTriggersRead | null } | null;
     }>(WATERING_TRIGGERS_QUERY, { controllerId });
-    return data.controller?.wateringTriggers ?? null;
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return data.controller.wateringTriggers ?? null;
   }
 
   async getStandardProgram(
@@ -236,7 +253,10 @@ export class HydrawiseApi {
     const data = await this.client.query<{
       controller: { programs: (StandardProgramRead & { __typename: string })[] | null } | null;
     }>(PROGRAMS_FULL_QUERY, { controllerId, includeZoneSpecific: true });
-    const found = (data.controller?.programs ?? []).find(
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    const found = (data.controller.programs ?? []).find(
       (p) => p.id === programId && p.__typename === 'StandardProgram',
     );
     return found ?? null;
@@ -256,7 +276,10 @@ export class HydrawiseApi {
           | null;
       } | null;
     }>(PROGRAMS_QUERY, { controllerId, includeZoneSpecific });
-    return (data.controller?.programs ?? []).map((p) => ({
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return (data.controller.programs ?? []).map((p) => ({
       id: p.id,
       name: p.name,
       program_type: p.__typename,
@@ -271,11 +294,18 @@ export class HydrawiseApi {
         wateringSettings: { programStartTimes: ProgramStartTimeRead[] | null } | null;
       } | null;
     }>(PROGRAM_START_TIMES_QUERY, { zoneId });
-    return data.zone?.wateringSettings?.programStartTimes ?? [];
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return data.zone.wateringSettings?.programStartTimes ?? [];
   }
 
-  async updateZoneAdvanced(payload: ZoneWritable): Promise<{ id: number } | null> {
-    return this.client.mutateRaw(UPDATE_ZONE_ADVANCED_MUTATION, zoneWritableToVars(payload));
+  async updateZoneAdvanced(payload: ZoneWritable): Promise<{ id: number }> {
+    return this.client.mutateRaw(
+      UPDATE_ZONE_ADVANCED_MUTATION,
+      zoneWritableToVars(payload),
+      (data) => requireMutationResult('updateZoneAdvanced', data.updateZoneAdvanced),
+    );
   }
 
   async setBaselineValues(payload: SetBaselineValuesPayload): Promise<StatusCodeAndSummary> {
@@ -292,111 +322,99 @@ export class HydrawiseApi {
     );
   }
 
-  async updateSeasonalAdjustments(controllerId: number, factors: number[]): Promise<boolean> {
-    const data = await this.client.mutateRaw<{ updateSeasonalAdjustments: boolean | null }>(
+  async updateSeasonalAdjustments(controllerId: number, factors: number[]): Promise<true> {
+    return this.client.mutateRaw(
       UPDATE_SEASONAL_ADJUSTMENTS_MUTATION,
       { controllerId, factors },
+      (data) => {
+        const value = data.updateSeasonalAdjustments;
+        if (value !== true) {
+          throw new HydrawiseMutationError(
+            `updateSeasonalAdjustments returned ${JSON.stringify(value)}; the operation may not have taken effect`,
+          );
+        }
+        return true;
+      },
     );
-    return data.updateSeasonalAdjustments ?? false;
   }
 
-  async updateWateringTriggers(payload: WateringTriggersWritable): Promise<{ id: number } | null> {
+  async updateWateringTriggers(payload: WateringTriggersWritable): Promise<{ id: number }> {
     return this.client.mutateRaw(
       UPDATE_WATERING_TRIGGERS_MUTATION,
       wateringTriggersWritableToVars(payload),
+      (data) => requireMutationResult('updateWateringTriggers', data.updateWateringTriggers),
     );
   }
 
-  async createProgramStartTime(payload: {
-    controller_id: number;
-    apply_all: boolean;
-    zones: number[];
-    schedules: number[];
-    time: string;
-    watering_type: number;
-    time_type: string;
-    sunday: number;
-    monday: number;
-    tuesday: number;
-    wednesday: number;
-    thursday: number;
-    friday: number;
-    saturday: number;
-  }): Promise<{ id: number } | null> {
+  async createProgramStartTime(payload: ProgramStartTimeWritable): Promise<{ id: number }> {
     return this.client.mutateRaw(
       CREATE_PROGRAM_START_TIME_MUTATION,
       programStartTimeWritableToVars(payload, false),
+      (data) => requireMutationResult('createProgramStartTime', data.createProgramStartTime),
     );
   }
 
-  async updateProgramStartTime(payload: {
-    id: number;
-    controller_id: number;
-    apply_all: boolean;
-    zones: number[];
-    schedules: number[];
-    time: string;
-    watering_type: number;
-    time_type: string;
-    sunday: number;
-    monday: number;
-    tuesday: number;
-    wednesday: number;
-    thursday: number;
-    friday: number;
-    saturday: number;
-  }): Promise<{ id: number } | null> {
+  async updateProgramStartTime(
+    payload: ProgramStartTimeWritable & { id: number },
+  ): Promise<{ id: number }> {
     return this.client.mutateRaw(
       UPDATE_PROGRAM_START_TIME_MUTATION,
       programStartTimeWritableToVars(payload, true),
+      (data) => requireMutationResult('updateProgramStartTime', data.updateProgramStartTime),
     );
   }
 
   async deleteProgramStartTime(id: number, controllerId: number): Promise<number> {
-    const data = await this.client.mutateRaw<{ deleteProgramStartTime: number | null }>(
+    return this.client.mutateRaw(
       DELETE_PROGRAM_START_TIME_MUTATION,
       { id, controllerId, isContractor: false },
+      (data) => requireDeletedId('deleteProgramStartTime', data.deleteProgramStartTime),
     );
-    return data.deleteProgramStartTime ?? 0;
   }
 
-  async createStandardProgram(payload: StandardProgramWritable): Promise<{ id: number; name: string } | null> {
-    return this.client.mutateRaw(CREATE_STANDARD_PROGRAM_MUTATION, standardProgramToVars(payload, false));
+  async createStandardProgram(payload: StandardProgramWritable): Promise<{ id: number; name: string }> {
+    return this.client.mutateRaw(
+      CREATE_STANDARD_PROGRAM_MUTATION,
+      standardProgramToVars(payload, false),
+      (data) => requireMutationResultNamed('createStandardProgram', data.createStandardProgram),
+    );
   }
 
-  async updateStandardProgram(payload: StandardProgramWritable & { program_id: number }): Promise<{ id: number; name: string } | null> {
-    return this.client.mutateRaw(UPDATE_STANDARD_PROGRAM_MUTATION, standardProgramToVars(payload, true));
+  async updateStandardProgram(payload: StandardProgramWritable & { program_id: number }): Promise<{ id: number; name: string }> {
+    return this.client.mutateRaw(
+      UPDATE_STANDARD_PROGRAM_MUTATION,
+      standardProgramToVars(payload, true),
+      (data) => requireMutationResultNamed('updateStandardProgram', data.updateStandardProgram),
+    );
   }
 
   async deleteStandardProgram(programId: number, controllerId: number): Promise<number> {
-    const data = await this.client.mutateRaw<{ deleteStandardProgram: number | null }>(
+    return this.client.mutateRaw(
       DELETE_STANDARD_PROGRAM_MUTATION,
       { programId, controllerId },
+      (data) => requireDeletedId('deleteStandardProgram', data.deleteStandardProgram),
     );
-    return data.deleteStandardProgram ?? 0;
   }
 
-  async createWateringProgram(payload: WateringProgramWritable): Promise<{ id: number; name: string } | null> {
-    return this.dispatchWateringProgram(payload, /* isUpdate */ false);
+  async createWateringProgram(payload: WateringProgramWritable): Promise<{ id: number; name: string }> {
+    return this.dispatchWateringProgram(payload, false);
   }
 
   async updateWateringProgram(
     payload: WateringProgramWritable & { program_id: number },
-  ): Promise<{ id: number; name: string } | null> {
-    return this.dispatchWateringProgram(payload, /* isUpdate */ true);
+  ): Promise<{ id: number; name: string }> {
+    return this.dispatchWateringProgram(payload, true);
   }
 
   async removeWateringProgram(programId: number): Promise<number> {
-    const data = await this.client.mutateRaw<{ removeWateringProgram: number | null }>(
+    return this.client.mutateRaw(
       REMOVE_WATERING_PROGRAM_MUTATION,
       { wateringProgramId: programId },
+      (data) => requireDeletedId('removeWateringProgram', data.removeWateringProgram),
     );
-    return data.removeWateringProgram ?? 0;
   }
 
-  // ---------------------------------------------------------------------------
-  // Reporting — added in change `add-watering-reports`.
-  // ---------------------------------------------------------------------------
+  // Reporting
 
   async getWateringReport(
     controllerId: number,
@@ -408,7 +426,10 @@ export class HydrawiseApi {
         reports: { watering: { runEvent: RunEventType | null }[] } | null;
       } | null;
     }>(WATERING_REPORT_QUERY, { controllerId, from, until });
-    return (data.controller?.reports?.watering ?? [])
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return (data.controller.reports?.watering ?? [])
       .map((e) => e.runEvent)
       .filter((e): e is RunEventType => e !== null);
   }
@@ -417,7 +438,10 @@ export class HydrawiseApi {
     const data = await this.client.query<{
       zone: { pastRuns: PastZoneRuns | null } | null;
     }>(ZONE_PAST_RUNS_QUERY, { zoneId });
-    return data.zone?.pastRuns ?? { lastRun: null, runs: null };
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return data.zone.pastRuns ?? { lastRun: null, runs: null };
   }
 
   async getZoneRunSummary(zoneId: number, args: RunSummaryArgs): Promise<RunSummaryDetails | null> {
@@ -425,7 +449,8 @@ export class HydrawiseApi {
       const data = await this.client.query<{
         zone: { runSummary: { currentWeek: RunSummaryDetails | null } | null } | null;
       }>(ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY, { zoneId });
-      return data.zone?.runSummary?.currentWeek ?? null;
+      if (!data.zone) throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+      return data.zone.runSummary?.currentWeek ?? null;
     }
     if (args.period === 'WEEK') {
       const data = await this.client.query<{
@@ -436,7 +461,8 @@ export class HydrawiseApi {
         endWeek: args.end_week,
         year: args.year,
       });
-      return data.zone?.runSummary?.weekly ?? null;
+      if (!data.zone) throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+      return data.zone.runSummary?.weekly ?? null;
     }
     if (args.period === 'MONTH') {
       const data = await this.client.query<{
@@ -447,9 +473,9 @@ export class HydrawiseApi {
         endMonth: args.end_month,
         year: args.year,
       });
-      return data.zone?.runSummary?.monthly ?? null;
+      if (!data.zone) throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+      return data.zone.runSummary?.monthly ?? null;
     }
-    // YEAR
     const data = await this.client.query<{
       zone: { runSummary: { annual: RunSummaryDetails | null } | null } | null;
     }>(ZONE_RUN_SUMMARY_ANNUAL_QUERY, {
@@ -457,20 +483,24 @@ export class HydrawiseApi {
       startYear: args.start_year,
       endYear: args.end_year,
     });
-    return data.zone?.runSummary?.annual ?? null;
+    if (!data.zone) throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    return data.zone.runSummary?.annual ?? null;
   }
 
   private async dispatchWateringProgram(
     payload: WateringProgramWritable,
     isUpdate: boolean,
-  ): Promise<{ id: number; name: string } | null> {
+  ): Promise<{ id: number; name: string }> {
     const vars = wateringProgramToVars(payload, isUpdate);
-    const mutation = pickWateringProgramMutation(payload.program_type, isUpdate);
-    return this.client.mutateRaw(mutation, vars);
+    const op = wateringProgramOperationName(payload.program_type, isUpdate);
+    const mutation = wateringProgramMutation(payload.program_type, isUpdate);
+    return this.client.mutateRaw(mutation, vars, (data) =>
+      requireMutationResultNamed(op, data[op]),
+    );
   }
 }
 
-function pickWateringProgramMutation(type: WateringProgramType, isUpdate: boolean): string {
+function wateringProgramMutation(type: WateringProgramWritable['program_type'], isUpdate: boolean): string {
   if (type === 'Time') {
     return isUpdate ? UPDATE_TIME_WATERING_PROGRAM_MUTATION : CREATE_TIME_WATERING_PROGRAM_MUTATION;
   }
@@ -478,6 +508,48 @@ function pickWateringProgramMutation(type: WateringProgramType, isUpdate: boolea
     return isUpdate ? UPDATE_SMART_WATERING_PROGRAM_MUTATION : CREATE_SMART_WATERING_PROGRAM_MUTATION;
   }
   return isUpdate ? UPDATE_VSS_WATERING_PROGRAM_MUTATION : CREATE_VSS_WATERING_PROGRAM_MUTATION;
+}
+
+function wateringProgramOperationName(
+  type: WateringProgramWritable['program_type'],
+  isUpdate: boolean,
+): string {
+  const verb = isUpdate ? 'update' : 'create';
+  if (type === 'Time') return `${verb}TimeBasedWateringProgram`;
+  if (type === 'Smart') return `${verb}SmartBasedWateringProgram`;
+  return `${verb}VirtualSolarSyncWateringProgram`;
+}
+
+function requireMutationResult(op: string, value: unknown): { id: number } {
+  if (!value || typeof value !== 'object' || typeof (value as { id?: unknown }).id !== 'number') {
+    throw new HydrawiseMutationError(
+      `${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`,
+    );
+  }
+  return value as { id: number };
+}
+
+function requireMutationResultNamed(op: string, value: unknown): { id: number; name: string } {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    typeof (value as { id?: unknown }).id !== 'number' ||
+    typeof (value as { name?: unknown }).name !== 'string'
+  ) {
+    throw new HydrawiseMutationError(
+      `${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`,
+    );
+  }
+  return value as { id: number; name: string };
+}
+
+function requireDeletedId(op: string, value: unknown): number {
+  if (typeof value !== 'number' || value <= 0) {
+    throw new HydrawiseMutationError(
+      `${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`,
+    );
+  }
+  return value;
 }
 
 function zoneWritableToVars(p: ZoneWritable): Record<string, unknown> {
@@ -542,23 +614,7 @@ function wateringTriggersWritableToVars(p: WateringTriggersWritable): Record<str
 }
 
 function programStartTimeWritableToVars(
-  p: {
-    id?: number;
-    controller_id: number;
-    apply_all: boolean;
-    zones: number[];
-    schedules: number[];
-    time: string;
-    watering_type: number;
-    time_type: string;
-    sunday: number;
-    monday: number;
-    tuesday: number;
-    wednesday: number;
-    thursday: number;
-    friday: number;
-    saturday: number;
-  },
+  p: ProgramStartTimeWritable,
   includeId: boolean,
 ): Record<string, unknown> {
   const vars: Record<string, unknown> = {
@@ -626,15 +682,15 @@ function wateringProgramToVars(
   if (p.program_type === 'Time') {
     base.fixedWateringRunTime = p.fixed_watering_run_time;
     base.fixedWateringFrequencyMode = p.fixed_watering_frequency_mode;
-    base.fixedWateringFrequencyValue = p.fixed_watering_frequency_value;
-    base.wateringProgramAdjustment = p.watering_program_adjustment;
+    base.fixedWateringFrequencyValue = p.fixed_watering_frequency_value ?? null;
+    base.wateringProgramAdjustment = p.watering_program_adjustment ?? null;
   } else if (p.program_type === 'Smart') {
     base.smartWateringRunTime = p.smart_watering_run_time;
     base.smartWateringFrequencyValue = p.smart_watering_frequency_value;
   } else {
     base.virtualSolarSyncWateringRunTime = p.virtual_solar_sync_watering_run_time;
     base.virtualSolarSyncWateringFrequencyMode = p.virtual_solar_sync_watering_frequency_mode;
-    base.virtualSolarSyncWateringFrequencyValue = p.virtual_solar_sync_watering_frequency_value;
+    base.virtualSolarSyncWateringFrequencyValue = p.virtual_solar_sync_watering_frequency_value ?? null;
   }
   return base;
 }

@@ -1,8 +1,8 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
+import type { Logger } from '../logger.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
-const JSON_RPC_PARSE_ERROR = -32700;
 const JSON_RPC_INVALID_REQUEST = -32600;
 const BEARER_PREFIX = /^Bearer\s+/i;
 
@@ -10,7 +10,7 @@ function jsonRpcError(code: number, message: string) {
   return { jsonrpc: '2.0', id: null, error: { code, message } };
 }
 
-export function originGuard(allowedOrigins: string[] | null) {
+export function originGuard(allowedOrigins: string[] | null, logger?: Logger) {
   const explicit = allowedOrigins?.map((o) => o.toLowerCase()) ?? null;
   return (req: Request, res: Response, next: NextFunction) => {
     const origin = req.get('origin');
@@ -18,20 +18,14 @@ export function originGuard(allowedOrigins: string[] | null) {
       next();
       return;
     }
-    if (explicit) {
-      if (explicit.includes(origin.toLowerCase())) {
-        next();
-        return;
-      }
-      res
-        .status(403)
-        .json(jsonRpcError(JSON_RPC_INVALID_REQUEST, `origin not allowed: ${origin}`));
-      return;
-    }
-    if (isLoopbackOrigin(origin)) {
+    const allowed = explicit
+      ? explicit.includes(origin.toLowerCase())
+      : isLoopbackOrigin(origin);
+    if (allowed) {
       next();
       return;
     }
+    logger?.warn('rejected request: origin not allowed', { origin, ip: req.ip });
     res
       .status(403)
       .json(jsonRpcError(JSON_RPC_INVALID_REQUEST, `origin not allowed: ${origin}`));
@@ -49,7 +43,7 @@ function isLoopbackOrigin(origin: string): boolean {
   return LOOPBACK_HOSTS.has(url.hostname) || LOOPBACK_HOSTS.has(`[${url.hostname}]`);
 }
 
-export function hostGuard(boundHost: string, _boundPort: number) {
+export function hostGuard(boundHost: string, _boundPort: number, logger?: Logger) {
   const expectedHostnames = new Set<string>();
   if (boundHost === '0.0.0.0' || boundHost === '::') {
     for (const h of LOOPBACK_HOSTS) expectedHostnames.add(stripBrackets(h).toLowerCase());
@@ -60,6 +54,7 @@ export function hostGuard(boundHost: string, _boundPort: number) {
   return (req: Request, res: Response, next: NextFunction) => {
     const host = req.get('host');
     if (!host) {
+      logger?.warn('rejected request: missing Host header', { ip: req.ip });
       res.status(403).json(jsonRpcError(JSON_RPC_INVALID_REQUEST, 'missing Host header'));
       return;
     }
@@ -68,6 +63,7 @@ export function hostGuard(boundHost: string, _boundPort: number) {
       next();
       return;
     }
+    logger?.warn('rejected request: host not allowed', { host, ip: req.ip });
     res.status(403).json(jsonRpcError(JSON_RPC_INVALID_REQUEST, `host not allowed: ${host}`));
   };
 }
@@ -77,38 +73,41 @@ function stripBrackets(s: string): string {
 }
 
 function parseHostname(hostHeader: string): string | null {
-  // Bracketed IPv6: [::1]:port  or  [::1]
   if (hostHeader.startsWith('[')) {
     const end = hostHeader.indexOf(']');
     return end > 0 ? hostHeader.slice(1, end) : null;
   }
   const colon = hostHeader.lastIndexOf(':');
-  // No colon, or a colon that is part of a bare IPv6 (multiple colons) → take whole thing
   const firstColon = hostHeader.indexOf(':');
   if (colon === -1) return hostHeader;
-  if (firstColon !== colon) return hostHeader; // bare IPv6, no port
+  // Bare IPv6 with no port has multiple colons but no brackets.
+  if (firstColon !== colon) return hostHeader;
   return hostHeader.slice(0, colon);
 }
 
-export function bearerGuard(authToken: string | null) {
+export function bearerGuard(authToken: string | null, logger?: Logger) {
   if (!authToken) {
     return (_req: Request, _res: Response, next: NextFunction) => next();
   }
-  const expected = Buffer.from(authToken, 'utf8');
+  // Hash both sides to a fixed-length digest before timingSafeEqual so the comparison itself doesn't leak token length.
+  const expectedDigest = createHash('sha256').update(authToken, 'utf8').digest();
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.get('authorization');
     if (!header) {
-      res.status(401).json(jsonRpcError(JSON_RPC_PARSE_ERROR, 'missing Authorization header'));
+      logger?.warn('rejected request: missing Authorization header', { ip: req.ip });
+      res.status(401).json(jsonRpcError(JSON_RPC_INVALID_REQUEST, 'missing Authorization header'));
       return;
     }
     if (!BEARER_PREFIX.test(header)) {
-      res.status(401).json(jsonRpcError(JSON_RPC_PARSE_ERROR, 'malformed Authorization header'));
+      logger?.warn('rejected request: malformed Authorization header', { ip: req.ip });
+      res.status(401).json(jsonRpcError(JSON_RPC_INVALID_REQUEST, 'malformed Authorization header'));
       return;
     }
     const token = header.replace(BEARER_PREFIX, '').trim();
-    const provided = Buffer.from(token, 'utf8');
-    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
-      res.status(401).json(jsonRpcError(JSON_RPC_PARSE_ERROR, 'invalid bearer token'));
+    const providedDigest = createHash('sha256').update(token, 'utf8').digest();
+    if (!timingSafeEqual(providedDigest, expectedDigest)) {
+      logger?.warn('rejected request: invalid bearer token', { ip: req.ip });
+      res.status(401).json(jsonRpcError(JSON_RPC_INVALID_REQUEST, 'invalid bearer token'));
       return;
     }
     next();

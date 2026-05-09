@@ -14,10 +14,12 @@ export interface HydrawiseClient {
     variables: Variables,
     extract: (data: Record<string, unknown>) => StatusCodeAndSummary,
   ): Promise<StatusCodeAndSummary>;
-  /** Like {@link mutate} but for mutations that don't return StatusCodeAndSummary
-   *  (e.g. Boolean, Int, or an entity). The caller is responsible for interpreting
-   *  the raw response — `null`/`false` are NOT auto-mapped to errors. */
-  mutateRaw<TResult>(document: string, variables: Variables): Promise<TResult>;
+  /** For non-StatusCodeAndSummary mutations. `extract` pulls the value from the GraphQL envelope and MUST throw HydrawiseMutationError on null/false (mutateRaw does not auto-map). */
+  mutateRaw<TResult>(
+    document: string,
+    variables: Variables,
+    extract: (data: Record<string, unknown>) => TResult,
+  ): Promise<TResult>;
 }
 
 class GraphQLHydrawiseClient implements HydrawiseClient {
@@ -55,13 +57,19 @@ class GraphQLHydrawiseClient implements HydrawiseClient {
     return result;
   }
 
-  async mutateRaw<TResult>(document: string, variables: Variables): Promise<TResult> {
+  async mutateRaw<TResult>(
+    document: string,
+    variables: Variables,
+    extract: (data: Record<string, unknown>) => TResult,
+  ): Promise<TResult> {
     const headers = { Authorization: await this.auth.getAuthHeader() };
+    let data: Record<string, unknown>;
     try {
-      return await this.client.request<TResult>(document, variables, headers);
+      data = await this.client.request<Record<string, unknown>>(document, variables, headers);
     } catch (err) {
       throw mapClientError(err);
     }
+    return extract(data);
   }
 }
 
@@ -74,7 +82,10 @@ function mapClientError(err: unknown): Error {
         cause: err,
       });
     }
-    const gqlMessage = err.response?.errors?.[0]?.message;
+    const errors = err.response?.errors;
+    const gqlMessage = errors && errors.length > 0
+      ? errors.map((e) => e.message).join('; ')
+      : undefined;
     return new HydrawiseAPIError(gqlMessage ?? err.message, { cause: err });
   }
   if (err instanceof Error) {

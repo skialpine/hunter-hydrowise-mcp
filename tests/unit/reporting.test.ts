@@ -147,14 +147,36 @@ const fakeRun: ScheduledZoneRun = {
 };
 
 describe('serializeScheduledZoneRun', () => {
-  it('serializes a normal run', () => {
+  it('serializes a normal run with scheduled_duration_minutes and actual_elapsed_seconds', () => {
     const out = serializeScheduledZoneRun(fakeRun);
     expect(out).not.toBeNull();
     expect(out!.id).toBe('run-1');
     expect(out!.start_time).toBe('2026-05-01T08:33:00.000Z'); // serializer unwraps .value
     expect(out!.normal_duration_minutes).toBe(2);
-    expect(out!.duration_minutes).toBe(2);
+    expect(out!.scheduled_duration_minutes).toBe(2);
+    expect(out!.actual_elapsed_seconds).toBe(120); // 2 minutes between start and end
     expect(out!.status).toBe('Completed');
+  });
+
+  it('reports actual_elapsed_seconds when a run was cancelled early', () => {
+    // Scheduled 5 minutes but stopped after 3 seconds (mirrors a real "Manual watering cycle" cancel).
+    const out = serializeScheduledZoneRun({
+      ...fakeRun,
+      startTime: { value: '2026-05-01T08:33:00.000Z' },
+      endTime: { value: '2026-05-01T08:33:03.000Z' },
+      duration: 5,
+    });
+    expect(out!.scheduled_duration_minutes).toBe(5);
+    expect(out!.actual_elapsed_seconds).toBe(3);
+  });
+
+  it('returns actual_elapsed_seconds=null on unparseable timestamps', () => {
+    const out = serializeScheduledZoneRun({
+      ...fakeRun,
+      startTime: { value: 'not-a-date' },
+      endTime: { value: 'also-not' },
+    });
+    expect(out!.actual_elapsed_seconds).toBeNull();
   });
 
   it('returns null for null input', () => {

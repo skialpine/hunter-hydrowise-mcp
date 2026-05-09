@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HydrawiseMutationError } from '../../src/errors.js';
+import { HydrawiseMutationError, HydrawiseNotFoundError } from '../../src/errors.js';
 import { HydrawiseApi } from '../../src/hydrawise/api.js';
 import type { HydrawiseClient, Variables } from '../../src/hydrawise/client.js';
 import type { StatusCodeAndSummary } from '../../src/hydrawise/queries.js';
@@ -28,6 +28,13 @@ function fakeClient() {
         throw new HydrawiseMutationError(mutateResult.summary);
       }
       return mutateResult;
+    },
+    async mutateRaw<TResult>(
+      _document: string,
+      _variables: Variables,
+      extract: (data: Record<string, unknown>) => TResult,
+    ): Promise<TResult> {
+      return extract({});
     },
   };
 
@@ -107,9 +114,16 @@ describe('HydrawiseApi', () => {
     await expect(api.startZone(42)).rejects.toThrow(/Zone is already running/);
   });
 
-  it('getZones returns an empty array when controller is null', async () => {
+  it('getZones throws HydrawiseNotFoundError when controller is null', async () => {
     const harness = fakeClient();
     harness.setQueryResult({ controller: null });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.getZones(7)).rejects.toThrow(HydrawiseNotFoundError);
+  });
+
+  it('getZones returns an empty array when controller exists but has no zones', async () => {
+    const harness = fakeClient();
+    harness.setQueryResult({ controller: { zones: null } });
     const api = new HydrawiseApi(harness.client);
     const result = await api.getZones(7);
     expect(result).toEqual([]);

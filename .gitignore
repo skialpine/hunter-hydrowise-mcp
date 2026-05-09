@@ -31,6 +31,7 @@ coverage/
 .env
 .env.*
 !.env.example
+snapshots
 
 # Editors / OS
 .vscode/

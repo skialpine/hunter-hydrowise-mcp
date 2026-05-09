@@ -12,10 +12,19 @@ function fakeClient() {
     async mutate() {
       throw new Error('no StatusCodeAndSummary mutations expected');
     },
-    mutateRaw: vi.fn(async (document: string, variables: Variables) => {
-      calls.push({ document, variables });
-      return { id: 1, name: 'mock' };
-    }) as unknown as HydrawiseClient['mutateRaw'],
+    mutateRaw: vi.fn(
+      async <TResult>(
+        document: string,
+        variables: Variables,
+        extract: (data: Record<string, unknown>) => TResult,
+      ): Promise<TResult> => {
+        calls.push({ document, variables });
+        // Return the realistic GraphQL envelope; the operation key is derived from the mutation document.
+        const opMatch = document.match(/(?:create|update|remove)\w+/);
+        const op = opMatch ? opMatch[0] : 'unknownOp';
+        return extract({ [op]: { id: 1, name: 'mock' } });
+      },
+    ) as unknown as HydrawiseClient['mutateRaw'],
   };
   return { client, calls };
 }
@@ -35,7 +44,8 @@ describe('watering program subtype dispatch', () => {
       fixed_watering_run_time: 600,
       fixed_watering_frequency_mode: 1,
     };
-    await api.updateWateringProgram(payload);
+    const result = await api.updateWateringProgram(payload);
+    expect(result).toEqual({ id: 1, name: 'mock' });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.document).toContain('updateTimeBasedWateringProgram');
     expect(calls[0]?.variables).toMatchObject({

@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { HydrawiseApi } from '../hydrawise/api.js';
-import { jsonResult, resolveUntil, runTool } from './_helpers.js';
+import type { Logger } from '../logger.js';
+import { jsonResult, pickSuspendUntil, resolveUntil, runTool } from './_helpers.js';
 
 const StartZoneInput = {
   zone_id: z.number().int(),
@@ -39,7 +40,10 @@ const ResumeAllZonesInput = { controller_id: z.number().int() };
 
 const PHYSICAL = 'PHYSICAL ACTION:';
 
-export function registerControlTools(server: McpServer, api: HydrawiseApi): void {
+export function registerControlTools(server: McpServer, api: HydrawiseApi, logger?: Logger): void {
+  const wrap = (toolName: string, fn: () => Promise<ReturnType<typeof jsonResult>>) =>
+    runTool(fn, { logger, toolName });
+
   server.registerTool(
     'start_zone',
     {
@@ -47,14 +51,15 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: StartZoneInput,
     },
     async ({ zone_id, minutes, learn_current_from_next_run, learn_flow_from_next_run }) =>
-      runTool(async () => {
+      wrap('start_zone', async () => {
         const seconds = minutes && minutes > 0 ? minutes * 60 : 0;
-        const result = await api.startZone(zone_id, {
-          durationSeconds: seconds,
-          learnCurrentFromNextRun: learn_current_from_next_run,
-          learnFlowFromNextRun: learn_flow_from_next_run,
-        });
-        return jsonResult(result);
+        return jsonResult(
+          await api.startZone(zone_id, {
+            durationSeconds: seconds,
+            learnCurrentFromNextRun: learn_current_from_next_run,
+            learnFlowFromNextRun: learn_flow_from_next_run,
+          }),
+        );
       }),
   );
 
@@ -65,7 +70,7 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: StopZoneInput,
     },
     async ({ zone_id }) =>
-      runTool(async () => jsonResult(await api.stopZone(zone_id))),
+      wrap('stop_zone', async () => jsonResult(await api.stopZone(zone_id))),
   );
 
   server.registerTool(
@@ -75,14 +80,15 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: StartAllZonesInput,
     },
     async ({ controller_id, minutes, learn_current_from_next_run, learn_flow_from_next_run }) =>
-      runTool(async () => {
+      wrap('start_all_zones', async () => {
         const seconds = minutes && minutes > 0 ? minutes * 60 : 0;
-        const result = await api.startAllZones(controller_id, {
-          durationSeconds: seconds,
-          learnCurrentFromNextRun: learn_current_from_next_run,
-          learnFlowFromNextRun: learn_flow_from_next_run,
-        });
-        return jsonResult(result);
+        return jsonResult(
+          await api.startAllZones(controller_id, {
+            durationSeconds: seconds,
+            learnCurrentFromNextRun: learn_current_from_next_run,
+            learnFlowFromNextRun: learn_flow_from_next_run,
+          }),
+        );
       }),
   );
 
@@ -93,7 +99,7 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: StopAllZonesInput,
     },
     async ({ controller_id }) =>
-      runTool(async () => jsonResult(await api.stopAllZones(controller_id))),
+      wrap('stop_all_zones', async () => jsonResult(await api.stopAllZones(controller_id))),
   );
 
   server.registerTool(
@@ -103,8 +109,8 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: SuspendZoneInput,
     },
     async ({ zone_id, days, until }) =>
-      runTool(async () => {
-        const target = resolveUntil(days, until);
+      wrap('suspend_zone', async () => {
+        const target = resolveUntil(pickSuspendUntil(days, until));
         return jsonResult(await api.suspendZone(zone_id, target));
       }),
   );
@@ -116,7 +122,7 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: ResumeZoneInput,
     },
     async ({ zone_id }) =>
-      runTool(async () => jsonResult(await api.resumeZone(zone_id))),
+      wrap('resume_zone', async () => jsonResult(await api.resumeZone(zone_id))),
   );
 
   server.registerTool(
@@ -126,8 +132,8 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: SuspendAllZonesInput,
     },
     async ({ controller_id, days, until }) =>
-      runTool(async () => {
-        const target = resolveUntil(days, until);
+      wrap('suspend_all_zones', async () => {
+        const target = resolveUntil(pickSuspendUntil(days, until));
         return jsonResult(await api.suspendAllZones(controller_id, target));
       }),
   );
@@ -139,6 +145,6 @@ export function registerControlTools(server: McpServer, api: HydrawiseApi): void
       inputSchema: ResumeAllZonesInput,
     },
     async ({ controller_id }) =>
-      runTool(async () => jsonResult(await api.resumeAllZones(controller_id))),
+      wrap('resume_all_zones', async () => jsonResult(await api.resumeAllZones(controller_id))),
   );
 }

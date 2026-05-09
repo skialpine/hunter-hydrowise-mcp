@@ -47,30 +47,20 @@ export function serializeZone(zone: Zone): Record<string, unknown> {
   };
 }
 
-/**
- * Translate a Zone read result into the snake_case writable view used by tool
- * outputs and the input shape of `update_zone_settings`. Numeric fields the
- * upstream mutation expects but we cannot reliably read are returned as `null`,
- * forcing the AI to supply them explicitly when calling the write tool.
- */
+// Returns null for fields the read schema doesn't expose, forcing the caller to supply them on update.
 export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknown> {
+  const ws = zone.wateringSettings;
   return {
     zone_id: zone.id,
     name: zone.name,
     number: zone.number.value,
     icon: zone.icon?.id ?? null,
-    watering_adjustment: zone.wateringSettings?.fixedWateringAdjustment ?? null,
-    // Hydrawise's read schema doesn't expose `cycleSoakEnable` directly — we
-    // infer it from whether `cycleAndSoakSettings` is present. Boolean to match
-    // the `updateZoneAdvanced` mutation's argument type.
-    cycle_soak_enable: zone.wateringSettings?.cycleAndSoakSettings ? true : false,
-    cycle_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.cycleDuration ?? null,
-    soak_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.soakDuration ?? null,
-    // Monitoring fields — read schema doesn't expose the configured method
-    // or value directly, so the writable view returns `null` here. The AI
-    // must supply these explicitly when calling `update_zone_settings` or
-    // `set_zone_baseline`. The `monitoring_observed` block below carries
-    // the read-only operating ranges and measured medians.
+    watering_adjustment: ws?.fixedWateringAdjustment ?? null,
+    // cycle_soak_enable isn't exposed in reads — infer from cycleAndSoakSettings presence; null when wateringSettings is missing entirely.
+    cycle_soak_enable: ws ? ws.cycleAndSoakSettings != null : null,
+    cycle_custom_time: ws?.cycleAndSoakSettings?.cycleDuration ?? null,
+    soak_custom_time: ws?.cycleAndSoakSettings?.soakDuration ?? null,
+    // Monitoring method/value aren't readable; caller supplies. monitoring_observed below is read-only.
     flow_monitoring_method: null,
     current_monitoring_method: null,
     flow_monitoring_value: null,
@@ -89,8 +79,7 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
           },
         }
       : null,
-    // Fields not directly present on the read shape; the AI must supply these
-    // (typically copied from a recent snapshot or set by intent):
+    // Read schema doesn't expose these; caller must supply on update.
     watering_mode: null,
     global_master_valve: null,
     schedule_adjustment_ids: null,
@@ -173,9 +162,18 @@ export function serializeScheduledZoneRun(
     start_time: r.startTime.value,
     end_time: r.endTime.value,
     normal_duration_minutes: r.normalDuration,
-    duration_minutes: r.duration,
+    // Hydrawise's `duration` is the SCHEDULED minutes the controller was told to run, not what actually elapsed. Compute actual_elapsed_seconds from start/end so manual cancellations and short runs are visible.
+    scheduled_duration_minutes: r.duration,
+    actual_elapsed_seconds: computeElapsedSeconds(r.startTime.value, r.endTime.value),
     status: r.status.label ?? null,
   };
+}
+
+function computeElapsedSeconds(start: string, end: string): number | null {
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
+  return Math.max(0, Math.round((endMs - startMs) / 1000));
 }
 
 export function serializeRunSummaryDetails(

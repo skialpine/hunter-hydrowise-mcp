@@ -2,7 +2,9 @@ export type ErrorKind =
   | 'config_error'
   | 'auth_error'
   | 'api_error'
-  | 'mutation_error';
+  | 'mutation_error'
+  | 'not_found'
+  | 'internal_error';
 
 abstract class HydrawiseError extends Error {
   abstract readonly kind: ErrorKind;
@@ -26,11 +28,10 @@ export class HydrawiseAPIError extends HydrawiseError {
 
 export class HydrawiseMutationError extends HydrawiseError {
   readonly kind = 'mutation_error' as const;
-  readonly summary: string;
-  constructor(summary: string, options?: { cause?: unknown }) {
-    super(summary, options);
-    this.summary = summary;
-  }
+}
+
+export class HydrawiseNotFoundError extends HydrawiseError {
+  readonly kind = 'not_found' as const;
 }
 
 export function isHydrawiseError(value: unknown): value is HydrawiseError {

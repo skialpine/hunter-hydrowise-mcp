@@ -1,13 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { HydrawiseApi } from '../hydrawise/api.js';
+import type { Logger } from '../logger.js';
 import { jsonResult, parseUnixTimestamp, runTool, validateRunSummaryArgs } from './_helpers.js';
 import { serializeRunEvent, serializeRunSummaryDetails, serializeScheduledZoneRun } from './serializers.js';
 
 const ControllerIdInput = { controller_id: z.number().int() };
 const ZoneIdInput = { zone_id: z.number().int() };
 
-export function registerReportingTools(server: McpServer, api: HydrawiseApi): void {
+export function registerReportingTools(server: McpServer, api: HydrawiseApi, logger?: Logger): void {
   server.registerTool(
     'get_watering_report',
     {
@@ -23,12 +24,15 @@ export function registerReportingTools(server: McpServer, api: HydrawiseApi): vo
       },
     },
     async ({ controller_id, from, until }) =>
-      runTool(async () => {
-        const fromTs = parseUnixTimestamp(from);
-        const untilTs = parseUnixTimestamp(until);
-        const events = await api.getWateringReport(controller_id, fromTs, untilTs);
-        return jsonResult(events.map(serializeRunEvent));
-      }),
+      runTool(
+        async () => {
+          const fromTs = parseUnixTimestamp(from);
+          const untilTs = parseUnixTimestamp(until);
+          const events = await api.getWateringReport(controller_id, fromTs, untilTs);
+          return jsonResult(events.map(serializeRunEvent));
+        },
+        { logger, toolName: 'get_watering_report' },
+      ),
   );
 
   server.registerTool(
@@ -36,18 +40,23 @@ export function registerReportingTools(server: McpServer, api: HydrawiseApi): vo
     {
       description:
         'Return the past run history for a single zone: the most recent run as last_run ' +
-        'and an array of recent runs. Each entry includes start/end times, normal and ' +
-        'actual duration in minutes, and status.',
+        'and an array of recent runs. Each entry includes start/end times, ' +
+        'normal_duration_minutes (program default), scheduled_duration_minutes (what the controller ' +
+        'was told to run), actual_elapsed_seconds (computed from end-start; smaller than scheduled when ' +
+        'a run was cancelled or stopped early), and status.',
       inputSchema: ZoneIdInput,
     },
     async ({ zone_id }) =>
-      runTool(async () => {
-        const history = await api.getZonePastRuns(zone_id);
-        return jsonResult({
-          last_run: serializeScheduledZoneRun(history.lastRun),
-          runs: (history.runs ?? []).map(serializeScheduledZoneRun),
-        });
-      }),
+      runTool(
+        async () => {
+          const history = await api.getZonePastRuns(zone_id);
+          return jsonResult({
+            last_run: serializeScheduledZoneRun(history.lastRun),
+            runs: (history.runs ?? []).map(serializeScheduledZoneRun),
+          });
+        },
+        { logger, toolName: 'get_zone_run_history' },
+      ),
   );
 
   server.registerTool(
@@ -74,10 +83,13 @@ export function registerReportingTools(server: McpServer, api: HydrawiseApi): vo
       },
     },
     async ({ zone_id, period, ...periodArgs }) =>
-      runTool(async () => {
-        const summaryArgs = validateRunSummaryArgs(period, periodArgs);
-        const summary = await api.getZoneRunSummary(zone_id, summaryArgs);
-        return jsonResult(serializeRunSummaryDetails(summary));
-      }),
+      runTool(
+        async () => {
+          const summaryArgs = validateRunSummaryArgs(period, periodArgs);
+          const summary = await api.getZoneRunSummary(zone_id, summaryArgs);
+          return jsonResult(serializeRunSummaryDetails(summary));
+        },
+        { logger, toolName: 'get_run_summary' },
+      ),
   );
 }

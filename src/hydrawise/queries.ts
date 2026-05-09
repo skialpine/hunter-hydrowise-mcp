@@ -83,12 +83,7 @@ export const CONTROLLER_QUERY = /* GraphQL */ `
   }
 `;
 
-/** Minimal bulk zones query. We deliberately keep this small because the
- *  upstream `Controller.zones { ... }` fan-out 500s on accounts with many
- *  zones when richer fields are requested (in particular `status.lastRun`
- *  and `status.nextRun` are declared `DateTime!` but are sometimes null
- *  upstream). Richer per-zone reads go through `get_zone` / `get_zone_settings`
- *  which query one zone at a time and are reliable. */
+// Bulk Controller.zones omits `status` — Zone.status.{lastRun,nextRun} are declared DateTime! but are null upstream, which 500s the bulk fan-out. Richer per-zone reads go through ZONE_FULL_QUERY (get_zone_settings).
 export const ZONES_QUERY = /* GraphQL */ `
   query Zones($controllerId: Int!) {
     controller(controllerId: $controllerId) {
@@ -213,16 +208,11 @@ export const RESUME_ALL_ZONES_MUTATION = /* GraphQL */ `
   }
 `;
 
-// ----------------------------------------------------------------------------
-// Schedule management — added in change `add-schedule-management`.
-// ----------------------------------------------------------------------------
+// Schedule management
 
-/** Monitoring method enum, matching upstream `MonitoringMethodEnum`. */
 export type MonitoringMethod = 'MANUAL' | 'LEARN_FROM_NEXT_RUN';
 
-/** Writable shape of a Zone, mirroring the `updateZoneAdvanced` mutation's input.
- *  Note `cycle_soak_enable` and `run_next_available_start_time` are booleans (the
- *  Advanced mutation differs from the deprecated `updateZone` which used Ints). */
+// Mirrors updateZoneAdvanced. cycle_soak_enable and run_next_available_start_time are Boolean (the deprecated updateZone took Int).
 export interface ZoneWritable {
   zone_id: number;
   icon: number | null;
@@ -326,31 +316,42 @@ export interface StandardProgramWritable {
   ignore_rain_sensor: boolean | null;
 }
 
-/** WateringProgram subtype discriminator used by tool argument schemas. */
 export type WateringProgramType = 'Time' | 'Smart' | 'VirtualSolarSync';
 
-/** WateringProgram (Time/Smart/VSS) writable shape — discriminated by program_type. */
-export interface WateringProgramWritable {
+interface WateringProgramBase {
   program_id?: number;
-  program_type: WateringProgramType;
   watering_program_name: string;
   watering_program_type: number | null;
   controller_id: number;
   schedule_adjustment_ids: number[] | null;
   seasonal_adjustment: number[] | null;
-  /** Time-based only */
-  fixed_watering_run_time?: number;
-  fixed_watering_frequency_mode?: number;
+}
+
+export interface TimeWateringProgramWritable extends WateringProgramBase {
+  program_type: 'Time';
+  fixed_watering_run_time: number;
+  fixed_watering_frequency_mode: number;
   fixed_watering_frequency_value?: number | null;
   watering_program_adjustment?: number | null;
-  /** Smart-based only */
-  smart_watering_run_time?: number;
-  smart_watering_frequency_value?: number;
-  /** Virtual-Solar-Sync only */
-  virtual_solar_sync_watering_run_time?: number;
-  virtual_solar_sync_watering_frequency_mode?: number;
+}
+
+export interface SmartWateringProgramWritable extends WateringProgramBase {
+  program_type: 'Smart';
+  smart_watering_run_time: number;
+  smart_watering_frequency_value: number;
+}
+
+export interface VssWateringProgramWritable extends WateringProgramBase {
+  program_type: 'VirtualSolarSync';
+  virtual_solar_sync_watering_run_time: number;
+  virtual_solar_sync_watering_frequency_mode: number;
   virtual_solar_sync_watering_frequency_value?: number | null;
 }
+
+export type WateringProgramWritable =
+  | TimeWateringProgramWritable
+  | SmartWateringProgramWritable
+  | VssWateringProgramWritable;
 
 /** Discriminated program list entry (read shape, normalized). */
 export interface ProgramListEntry {
@@ -979,7 +980,7 @@ export const DELETE_STANDARD_PROGRAM_MUTATION = /* GraphQL */ `
   }
 `;
 
-// WateringProgram (legacy API path) — three subtype-specific mutations.
+// WateringProgram subtype-specific mutations (Time / Smart / VirtualSolarSync). The Standard equivalent lives in updateStandardProgram above.
 
 export const CREATE_TIME_WATERING_PROGRAM_MUTATION = /* GraphQL */ `
   mutation CreateTimeWP(
@@ -1155,9 +1156,7 @@ export const REMOVE_WATERING_PROGRAM_MUTATION = /* GraphQL */ `
   }
 `;
 
-// ----------------------------------------------------------------------------
-// Reporting — added in change `add-watering-reports`.
-// ----------------------------------------------------------------------------
+// Reporting
 
 export interface ScheduledZoneRun {
   id: string;

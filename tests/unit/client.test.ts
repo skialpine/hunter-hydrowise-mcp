@@ -43,7 +43,7 @@ describe('GraphQLHydrawiseClient', () => {
   it('maps a 401 ClientError to HydrawiseAuthError', async () => {
     resetClientForTesting();
     const err = new ClientError(
-      { status: 401, headers: new Headers(), errors: [], data: undefined },
+      { status: 401, headers: new Headers(), errors: [], data: undefined } as unknown as ConstructorParameters<typeof ClientError>[0],
       { query: 'q' },
     );
     (GraphQLClient as unknown as { mockImplementation: (fn: unknown) => void }).mockImplementation(
@@ -65,7 +65,7 @@ describe('GraphQLHydrawiseClient', () => {
         headers: new Headers(),
         errors: [{ message: 'boom' }],
         data: undefined,
-      },
+      } as unknown as ConstructorParameters<typeof ClientError>[0],
       { query: 'q' },
     );
     (GraphQLClient as unknown as { mockImplementation: (fn: unknown) => void }).mockImplementation(

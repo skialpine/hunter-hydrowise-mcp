@@ -16,6 +16,13 @@ function fakeClient(): HydrawiseClient {
     async mutate(): Promise<StatusCodeAndSummary> {
       return { status: 'OK', summary: '' };
     },
+    async mutateRaw<TResult>(
+      _document: string,
+      _variables: Variables,
+      extract: (data: Record<string, unknown>) => TResult,
+    ): Promise<TResult> {
+      return extract({});
+    },
   };
 }
 
@@ -100,7 +107,7 @@ async function callTool(
     .set('Accept', 'application/json, text/event-stream')
     .set('Content-Type', 'application/json')
     .send(INITIALIZE_BODY);
-  const sessionId = init.headers['mcp-session-id'];
+  const sessionId = init.headers['mcp-session-id'] as string;
 
   const res = await request(app)
     .post('/mcp')
@@ -135,14 +142,14 @@ describe('get_watering_report integration', () => {
       until: '2026-05-09',
     });
     expect(resp.result?.isError).toBeFalsy();
-    const events = JSON.parse(resp.result!.content[0].text);
+    const events = JSON.parse(resp.result!.content[0]!.text);
     expect(events).toHaveLength(1);
     expect(events[0].zone_id).toBe(10);
     expect(events[0].zone_name).toBe('Front Lawn');
     expect(events[0].reported_duration_seconds).toBe(125);
   });
 
-  it('returns isError when api throws', async () => {
+  it('returns api_error with the upstream message when api throws HydrawiseAPIError', async () => {
     const app = makeApp({
       getWateringReport: async () => {
         throw new HydrawiseAPIError('upstream failure');
@@ -154,9 +161,10 @@ describe('get_watering_report integration', () => {
       until: '2026-05-09',
     });
     expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/^api_error: upstream failure/);
   });
 
-  it('returns isError for an invalid date string', async () => {
+  it('returns config_error for an invalid date string', async () => {
     const app = makeApp({ getWateringReport: async () => [] });
     const resp = await callTool(app, 'get_watering_report', {
       controller_id: 1,
@@ -164,6 +172,7 @@ describe('get_watering_report integration', () => {
       until: '2026-05-09',
     });
     expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/^config_error: not a valid date string/);
   });
 });
 
@@ -174,7 +183,7 @@ describe('get_zone_run_history integration', () => {
     });
     const resp = await callTool(app, 'get_zone_run_history', { zone_id: 10 });
     expect(resp.result?.isError).toBeFalsy();
-    const data = JSON.parse(resp.result!.content[0].text);
+    const data = JSON.parse(resp.result!.content[0]!.text);
     expect(data.last_run).not.toBeNull();
     expect(data.last_run.id).toBe('run-1');
     expect(data.runs).toHaveLength(1);
@@ -186,7 +195,7 @@ describe('get_zone_run_history integration', () => {
     });
     const resp = await callTool(app, 'get_zone_run_history', { zone_id: 10 });
     expect(resp.result?.isError).toBeFalsy();
-    const data = JSON.parse(resp.result!.content[0].text);
+    const data = JSON.parse(resp.result!.content[0]!.text);
     expect(data.last_run).toBeNull();
     expect(data.runs).toHaveLength(0);
   });
@@ -202,7 +211,7 @@ describe('get_run_summary integration', () => {
       period: 'CURRENT_WEEK',
     });
     expect(resp.result?.isError).toBeFalsy();
-    const data = JSON.parse(resp.result!.content[0].text);
+    const data = JSON.parse(resp.result!.content[0]!.text);
     expect(data.total_normal_run_time_minutes).toBe(20);
     expect(data.total_actual_run_time_minutes).toBe(18);
     expect(data.total_water_volume).toEqual({ value: 3.2, unit: 'gal' });
@@ -216,6 +225,6 @@ describe('get_run_summary integration', () => {
       // missing start_week, end_week, year
     });
     expect(resp.result?.isError).toBe(true);
-    expect(resp.result?.content[0].text).toMatch(/config_error/);
+    expect(resp.result?.content[0]?.text).toMatch(/config_error/);
   });
 });

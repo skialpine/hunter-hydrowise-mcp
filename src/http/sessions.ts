@@ -1,4 +1,5 @@
 import type { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { Logger } from '../logger.js';
 
 interface Entry {
   transport: StreamableHTTPServerTransport;
@@ -8,7 +9,7 @@ interface Entry {
 export class SessionRegistry {
   private readonly entries = new Map<string, Entry>();
 
-  constructor(private readonly idleTtlMs: number) {}
+  constructor(private readonly idleTtlMs: number, private readonly logger?: Logger) {}
 
   get(sessionId: string): StreamableHTTPServerTransport | undefined {
     const entry = this.entries.get(sessionId);
@@ -53,7 +54,13 @@ export class SessionRegistry {
       const entry = this.entries.get(sessionId);
       if (!entry) return;
       this.entries.delete(sessionId);
-      void entry.transport.close();
+      // Don't let a transport-close failure trip the process-level unhandledRejection handler.
+      entry.transport.close().catch((err) => {
+        this.logger?.warn('failed to close evicted transport', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }, this.idleTtlMs);
     timer.unref?.();
     return timer;

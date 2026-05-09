@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ConfigError } from '../errors.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
+import type { Logger } from '../logger.js';
+import type { WateringProgramWritable } from '../hydrawise/queries.js';
 import {
   serializeProgramStartTime,
   serializeWateringTriggers,
@@ -11,17 +13,11 @@ import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
 
-// ----- Zone settings ---------------------------------------------------------
-
 const ZoneIdInput = { zone_id: z.number().int() };
 
 const MonitoringMethodEnum = z.enum(['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const);
 
-// Required fields match `updateZoneAdvanced`'s upstream `Int!` / `String!` /
-// `[Int]!` arguments. Everything else is declared optional so the AI can
-// omit a field instead of typing out `: null` for each — when omitted, the
-// tool dispatches `null` to the mutation, and Hydrawise applies its
-// schema-level default (e.g. `cycleSoakEnable = false`, `factors = []`).
+// Required fields match updateZoneAdvanced's Int!/String!/[Int]! args. Optional fields default to null on dispatch; Hydrawise applies its schema-level defaults (cycleSoakEnable=false, factors=[], etc.).
 const ZoneWritableShape = {
   zone_id: z.number().int(),
   name: z.string(),
@@ -37,8 +33,6 @@ const ZoneWritableShape = {
   fixed_watering_frequency: z.number().int().nullable().optional(),
   smart_watering_frequency: z.number().int().nullable().optional(),
   virtual_solar_sync_watering_frequency: z.number().int().nullable().optional(),
-  // updateZoneAdvanced declares run_next_available_start_time and
-  // cycle_soak_enable as Boolean (vs Int on the deprecated updateZone).
   run_next_available_start_time: z.boolean().nullable().optional(),
   pre_configured_watering_schedule_id: z.number().int().nullable().optional(),
   cycle_soak_enable: z.boolean().nullable().optional(),
@@ -51,10 +45,11 @@ const ZoneWritableShape = {
   flow_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   flow_monitoring_value: z.number().nullable().optional(),
-  current_monitoring_value: z.number().nullable().optional(),
+  current_monitoring_value: z.number().int().nullable().optional(),
   preview: z.boolean().optional(),
 };
 
+// setBaselineValues takes Float for both values; updateZoneAdvanced takes Int for currentMonitoringValue.
 const SetBaselineInput = {
   zone_id: z.number().int(),
   flow_monitoring_method: MonitoringMethodEnum,
@@ -64,8 +59,6 @@ const SetBaselineInput = {
   preview: z.boolean().optional(),
 };
 
-// ----- Seasonal adjustments --------------------------------------------------
-
 const ControllerIdInput = { controller_id: z.number().int() };
 
 const SeasonalAdjustmentsInput = {
@@ -73,8 +66,6 @@ const SeasonalAdjustmentsInput = {
   factors: z.array(z.number().int()).length(12, 'factors must have exactly 12 entries'),
   preview: z.boolean().optional(),
 };
-
-// ----- Watering triggers -----------------------------------------------------
 
 const WateringTriggersInput = {
   controller_id: z.number().int(),
@@ -101,8 +92,6 @@ const WateringTriggersInput = {
   reduce_water_temperature_percentage: z.number().int(),
   preview: z.boolean().optional(),
 };
-
-// ----- Program start times ---------------------------------------------------
 
 const ProgramStartTimeBaseShape = {
   controller_id: z.number().int(),
@@ -138,8 +127,6 @@ const DeleteProgramStartTimeInput = {
   preview: z.boolean().optional(),
 };
 
-// ----- Standard programs -----------------------------------------------------
-
 const ZoneRunTimeShape = z.object({
   zone_number: z.number().int(),
   run_time_group_id: z.number().int().nullable().optional(),
@@ -174,8 +161,6 @@ const DeleteStandardProgramInput = {
   controller_id: z.number().int(),
   preview: z.boolean().optional(),
 };
-
-// ----- Watering programs -----------------------------------------------------
 
 const WateringProgramTypeEnum = z.enum(['Time', 'Smart', 'VirtualSolarSync'] as const);
 
@@ -215,10 +200,13 @@ const ProgramTypeReadInput = {
   controller_id: z.number().int(),
 };
 
-// ----- Registration ----------------------------------------------------------
-
-export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): void {
-  // -- Reads ------------------------------------------------------------------
+export function registerSchedulingTools(
+  server: McpServer,
+  api: HydrawiseApi,
+  logger?: Logger,
+): void {
+  const wrap = (toolName: string, fn: () => Promise<ReturnType<typeof jsonResult>>) =>
+    runTool(fn, { logger, toolName });
 
   server.registerTool(
     'get_zone_settings',
@@ -230,11 +218,9 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ZoneIdInput,
     },
     async ({ zone_id }) =>
-      runTool(async () => {
-        const zone = await api.getZoneFull(zone_id);
-        if (!zone) return jsonResult({ error: `zone ${zone_id} not found` });
-        return jsonResult(serializeZoneSettings(zone));
-      }),
+      wrap('get_zone_settings', async () =>
+        jsonResult(serializeZoneSettings(await api.getZoneFull(zone_id))),
+      ),
   );
 
   server.registerTool(
@@ -251,15 +237,17 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       },
     },
     async ({ controller_id, program_id, program_type }) =>
-      runTool(async () => {
+      wrap('get_program', async () => {
         if (program_type !== 'Standard') {
-          return jsonResult({
-            error: `program_type=${program_type} is not yet supported by get_program; only Standard is implemented`,
-          });
+          throw new ConfigError(
+            `program_type=${program_type} is not yet supported by get_program; only Standard is implemented`,
+          );
         }
         const program = await api.getStandardProgram(controller_id, program_id);
         if (!program) {
-          return jsonResult({ error: `program ${program_id} not found on controller ${controller_id}` });
+          throw new ConfigError(
+            `program ${program_id} not found on controller ${controller_id}`,
+          );
         }
         return jsonResult({
           id: program.id,
@@ -282,9 +270,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
             number: z.number.value,
             name: z.name,
           })),
-          // RunTimeGroup.duration is reported in MINUTES (matches the Hydrawise GUI's
-          // "40 minutes" / "30 minutes" labels). Note: this is different from the v1
-          // control tools' `customRunDuration` which is seconds. Don't confuse them.
+          // RunTimeGroup.duration is minutes; startZone's customRunDuration is seconds — don't conflate.
           per_zone_run_times: program.applications.map((a) => ({
             zone_id: a.zone.id,
             zone_number: a.zone.number.value,
@@ -305,7 +291,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ProgramTypeReadInput,
     },
     async ({ controller_id }) =>
-      runTool(async () => jsonResult(await api.getPrograms(controller_id))),
+      wrap('list_programs', async () => jsonResult(await api.getPrograms(controller_id))),
   );
 
   server.registerTool(
@@ -317,7 +303,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ZoneIdInput,
     },
     async ({ zone_id }) =>
-      runTool(async () => {
+      wrap('list_program_start_times_for_zone', async () => {
         const starts = await api.getProgramStartTimesForZone(zone_id);
         return jsonResult(starts.map(serializeProgramStartTime));
       }),
@@ -330,7 +316,9 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ControllerIdInput,
     },
     async ({ controller_id }) =>
-      runTool(async () => jsonResult({ factors: await api.getSeasonalAdjustments(controller_id) })),
+      wrap('get_seasonal_adjustments', async () =>
+        jsonResult({ factors: await api.getSeasonalAdjustments(controller_id) }),
+      ),
   );
 
   server.registerTool(
@@ -342,14 +330,14 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ControllerIdInput,
     },
     async ({ controller_id }) =>
-      runTool(async () => {
+      wrap('get_watering_triggers', async () => {
         const triggers = await api.getWateringTriggers(controller_id);
-        if (!triggers) return jsonResult({ error: `triggers not available for controller ${controller_id}` });
+        if (!triggers) {
+          throw new ConfigError(`watering triggers not configured on controller ${controller_id}`);
+        }
         return jsonResult(serializeWateringTriggers(triggers));
       }),
   );
-
-  // -- Writes -----------------------------------------------------------------
 
   server.registerTool(
     'update_zone_settings',
@@ -358,10 +346,8 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: ZoneWritableShape,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('update_zone_settings', async () => {
         const { preview, ...partial } = input;
-        // Fill `null` for every optional field the caller omitted, so the api
-        // layer (and graphql-request) always sees an explicit value.
         const payload = {
           zone_id: partial.zone_id,
           name: partial.name,
@@ -405,7 +391,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: SetBaselineInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('set_zone_baseline', async () => {
         const { preview, ...rest } = input;
         const payload = {
           zone_id: rest.zone_id,
@@ -427,7 +413,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: SeasonalAdjustmentsInput,
     },
     async ({ controller_id, factors, preview }) =>
-      runTool(async () =>
+      wrap('update_seasonal_adjustments', async () =>
         previewOrApply(
           'updateSeasonalAdjustments',
           { controller_id, factors },
@@ -444,7 +430,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: WateringTriggersInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('update_watering_triggers', async () => {
         const { preview, ...payload } = input;
         return previewOrApply('updateWateringTriggers', payload, preview, async () =>
           api.updateWateringTriggers(payload),
@@ -459,7 +445,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: CreateProgramStartTimeInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('create_program_start_time', async () => {
         const { preview, ...payload } = input;
         return previewOrApply('createProgramStartTime', payload, preview, async () =>
           api.createProgramStartTime(payload),
@@ -474,7 +460,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: UpdateProgramStartTimeInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('update_program_start_time', async () => {
         const { preview, ...payload } = input;
         return previewOrApply('updateProgramStartTime', payload, preview, async () =>
           api.updateProgramStartTime(payload),
@@ -489,7 +475,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: DeleteProgramStartTimeInput,
     },
     async ({ id, controller_id, preview }) =>
-      runTool(async () =>
+      wrap('delete_program_start_time', async () =>
         previewOrApply('deleteProgramStartTime', { id, controller_id }, preview, async () =>
           api.deleteProgramStartTime(id, controller_id),
         ),
@@ -503,7 +489,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: CreateStandardProgramInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('create_standard_program', async () => {
         const { preview, ...payload } = input;
         return previewOrApply('createStandardProgram', payload, preview, async () =>
           api.createStandardProgram(payload),
@@ -518,7 +504,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: UpdateStandardProgramInput,
     },
     async (input) =>
-      runTool(async () => {
+      wrap('update_standard_program', async () => {
         const { preview, ...payload } = input;
         return previewOrApply('updateStandardProgram', payload, preview, async () =>
           api.updateStandardProgram(payload),
@@ -533,7 +519,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: DeleteStandardProgramInput,
     },
     async ({ program_id, controller_id, preview }) =>
-      runTool(async () =>
+      wrap('delete_standard_program', async () =>
         previewOrApply(
           'deleteStandardProgram',
           { program_id, controller_id },
@@ -550,9 +536,9 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: CreateWateringProgramInput,
     },
     async (input) =>
-      runTool(async () => {
-        const { preview, ...payload } = input;
-        validateWateringProgramSubtype(payload);
+      wrap('create_watering_program', async () => {
+        const { preview, ...partial } = input;
+        const payload = narrowWateringProgram(partial);
         return previewOrApply(
           `create${payload.program_type}WateringProgram`,
           payload,
@@ -569,9 +555,9 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: UpdateWateringProgramInput,
     },
     async (input) =>
-      runTool(async () => {
-        const { preview, ...payload } = input;
-        validateWateringProgramSubtype(payload);
+      wrap('update_watering_program', async () => {
+        const { preview, program_id, ...partial } = input;
+        const payload = { ...narrowWateringProgram(partial), program_id };
         return previewOrApply(
           `update${payload.program_type}WateringProgram`,
           payload,
@@ -588,7 +574,7 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
       inputSchema: DeleteWateringProgramInput,
     },
     async ({ program_id, preview }) =>
-      runTool(async () =>
+      wrap('delete_watering_program', async () =>
         previewOrApply('removeWateringProgram', { program_id }, preview, async () =>
           api.removeWateringProgram(program_id),
         ),
@@ -596,38 +582,73 @@ export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): v
   );
 }
 
-function validateWateringProgramSubtype(p: {
+interface WateringProgramFlatInput {
   program_type: 'Time' | 'Smart' | 'VirtualSolarSync';
+  watering_program_name: string;
+  watering_program_type: number | null;
+  controller_id: number;
+  schedule_adjustment_ids: number[] | null;
+  seasonal_adjustment: number[] | null;
   fixed_watering_run_time?: number;
   fixed_watering_frequency_mode?: number;
+  fixed_watering_frequency_value?: number | null;
+  watering_program_adjustment?: number | null;
   smart_watering_run_time?: number;
   smart_watering_frequency_value?: number;
   virtual_solar_sync_watering_run_time?: number;
   virtual_solar_sync_watering_frequency_mode?: number;
-}): void {
+  virtual_solar_sync_watering_frequency_value?: number | null;
+}
+
+function narrowWateringProgram(p: WateringProgramFlatInput): WateringProgramWritable {
+  const base = {
+    watering_program_name: p.watering_program_name,
+    watering_program_type: p.watering_program_type,
+    controller_id: p.controller_id,
+    schedule_adjustment_ids: p.schedule_adjustment_ids,
+    seasonal_adjustment: p.seasonal_adjustment,
+  };
   if (p.program_type === 'Time') {
     if (p.fixed_watering_run_time === undefined || p.fixed_watering_frequency_mode === undefined) {
       throw new ConfigError(
         'program_type=Time requires fixed_watering_run_time and fixed_watering_frequency_mode',
       );
     }
-  } else if (p.program_type === 'Smart') {
-    if (
-      p.smart_watering_run_time === undefined ||
-      p.smart_watering_frequency_value === undefined
-    ) {
+    return {
+      ...base,
+      program_type: 'Time',
+      fixed_watering_run_time: p.fixed_watering_run_time,
+      fixed_watering_frequency_mode: p.fixed_watering_frequency_mode,
+      fixed_watering_frequency_value: p.fixed_watering_frequency_value,
+      watering_program_adjustment: p.watering_program_adjustment,
+    };
+  }
+  if (p.program_type === 'Smart') {
+    if (p.smart_watering_run_time === undefined || p.smart_watering_frequency_value === undefined) {
       throw new ConfigError(
         'program_type=Smart requires smart_watering_run_time and smart_watering_frequency_value',
       );
     }
-  } else {
-    if (
-      p.virtual_solar_sync_watering_run_time === undefined ||
-      p.virtual_solar_sync_watering_frequency_mode === undefined
-    ) {
-      throw new ConfigError(
-        'program_type=VirtualSolarSync requires virtual_solar_sync_watering_run_time and virtual_solar_sync_watering_frequency_mode',
-      );
-    }
+    return {
+      ...base,
+      program_type: 'Smart',
+      smart_watering_run_time: p.smart_watering_run_time,
+      smart_watering_frequency_value: p.smart_watering_frequency_value,
+    };
   }
+  if (
+    p.virtual_solar_sync_watering_run_time === undefined ||
+    p.virtual_solar_sync_watering_frequency_mode === undefined
+  ) {
+    throw new ConfigError(
+      'program_type=VirtualSolarSync requires virtual_solar_sync_watering_run_time and virtual_solar_sync_watering_frequency_mode',
+    );
+  }
+  return {
+    ...base,
+    program_type: 'VirtualSolarSync',
+    virtual_solar_sync_watering_run_time: p.virtual_solar_sync_watering_run_time,
+    virtual_solar_sync_watering_frequency_mode: p.virtual_solar_sync_watering_frequency_mode,
+    virtual_solar_sync_watering_frequency_value: p.virtual_solar_sync_watering_frequency_value,
+  };
 }
