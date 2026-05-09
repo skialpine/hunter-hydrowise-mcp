@@ -20,6 +20,13 @@ env/
 .coverage
 htmlcov/
 
+# Node / TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.npm/
+
 # Secrets / local env
 .env
 .env.*
