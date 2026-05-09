@@ -16,11 +16,12 @@ This change adds three pieces:
 
 ## What Changes
 
-- Snapshot envelope grows a top-level `_restore_recipe` array containing ordered restore steps. Each step has shape: `{ order: int, tool: string, args: { ... }, depends_on: [order...], notes: "optional rationale or caveat" }`.
-- Snapshot envelope grows a top-level `_caveats` array — strings naming known restore limitations affecting this snapshot (e.g., "snapshot references reusable_schedule_id 17, which is account-managed; restore will fail if it no longer exists").
-- New skill file: `.claude/skills/restore-irrigation-backup.md` — the AI procedure for orchestrating restore from a snapshot file.
+- Snapshot envelope grows a top-level `_restore_recipe` array containing ordered restore steps. Each step has shape: `{ order: int, tool: string, args: { ... }, depends_on: [order...], notes: "optional rationale or caveat" }`. The recipe builder uses zone CRUD (added in Phase 1) to handle the missing-zone case (snapshot has zone, live doesn't → `create_zone`; live has zone, snapshot doesn't → `delete_zone`).
+- Snapshot envelope grows a top-level `_caveats` array — strings naming known restore limitations affecting this snapshot (e.g., "snapshot references reusable_schedule_id 17, which is account-managed; restore will fail if it no longer exists"; "snapshot's watering trigger units are F/mph; live account uses C/kph — reconcile before restore").
+- New skill file `.claude/skills/restore-irrigation-backup.md` — the AI procedure for orchestrating restore from a snapshot file.
+- New skill file `.claude/skills/capture-irrigation-snapshot.md` — the AI procedure for capturing a snapshot + watering-report delta. Walks the user through writing a snapshot to `snapshots/<controller>-<timestamp>.json` AND the new report data since last capture into `snapshots/history/<controller>-<from>_to_<until>.json`. Builds permanent multi-year history from per-snapshot deltas, surviving Hydrawise's ~1 year report retention.
 - Round-trip integration test in `tests/integration/snapshot-roundtrip.test.ts`: stand up a fake API, capture a snapshot, replay each `_restore_recipe` step with `preview: true`, assert each step's planned variables match what the snapshot says.
-- CLAUDE.md "Restore-from-backup" section expanded to document the recipe pattern and link to the skill.
+- CLAUDE.md "Restore-from-backup" section expanded to document the recipe pattern and link to both skills.
 
 ## Capabilities
 
@@ -32,10 +33,12 @@ This change adds three pieces:
 - `src/tools/backup.ts`: extend `dump_controller_snapshot` to compute and emit the recipe block. The recipe builder is a pure function over the captured snapshot data.
 - `src/tools/serializers.ts`: a new `buildRestoreRecipe(snapshot)` helper that walks the snapshot and outputs the ordered tool-call list.
 - `src/tools/backup.ts`: `_caveats` populated from a fixed checklist (reusable_schedule_id presence, custom sensor type presence, `_unreadable_fields` presence per zone, etc.).
-- `.claude/skills/restore-irrigation-backup.md`: new file describing the AI workflow.
+- `.claude/skills/restore-irrigation-backup.md`: new file describing the AI restore workflow. Lives in the repo (not `~/.claude/skills/`) so it travels with the code. User can copy/move to their personal skills dir if preferred.
+- `.claude/skills/capture-irrigation-snapshot.md`: new file describing the AI capture workflow (snapshot + history delta).
+- `snapshots/history/` directory referenced by the capture skill (already gitignored alongside `snapshots/`; no separate gitignore entry needed).
 - `tests/integration/snapshot-roundtrip.test.ts`: new test file.
 - `tests/unit/restoreRecipe.test.ts`: unit tests for the recipe builder.
 - CLAUDE.md updated.
-- No new MCP tools — the recipe is data the AI consumes, not a new interface.
+- No new MCP tools — the recipe is data the AI consumes, not a new interface. Both skills compose existing tools.
 
 This phase is the smallest of the four: ~½ day. It depends on Phases 1+2+3 being complete (the recipe needs to know about every restorable category).

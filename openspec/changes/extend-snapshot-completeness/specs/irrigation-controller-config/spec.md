@@ -66,6 +66,25 @@ The server SHALL expose write tools named `hibernate_controller` and `wake_contr
 - **WHEN** an MCP client calls `wake_controller`
 - **THEN** the tool dispatches `wakeController(controllerId)` and returns the boolean result
 
+### Requirement: create_zone and delete_zone tools manage zone existence
+
+The server SHALL expose write tools `create_zone` (wrapping `createZoneAdvanced`) and `delete_zone` (wrapping `deleteZone`). `create_zone` SHALL accept the same writable-zone payload as `update_zone_settings`, minus `zone_id` and plus `controller_id`. `delete_zone` SHALL accept only `zone_id`. Both tools are `PHYSICAL ACTION:` and accept a `preview` boolean.
+
+#### Scenario: Create a zone on a fresh controller
+
+- **WHEN** an MCP client calls `create_zone` with `controller_id` and a complete writable-zone payload
+- **THEN** the tool dispatches `createZoneAdvanced(...)` and returns the created `Zone` (with the new `id`)
+
+#### Scenario: Delete a zone
+
+- **WHEN** an MCP client calls `delete_zone` with a valid `zone_id`
+- **THEN** the tool dispatches `deleteZone(zoneId)` and returns the boolean result
+
+#### Scenario: Reject deprecated createZone variant usage
+
+- **WHEN** an MCP client searches for a `create_zone` tool
+- **THEN** only the Advanced-variant is exposed; the deprecated `createZone` mutation (with `Int` cycleSoakEnable / runNextAvailableStartTime) is intentionally not wrapped
+
 ### Requirement: Expander CRUD tools manage hardware expanders
 
 The server SHALL expose write tools `create_expander`, `update_expander`, and `delete_expander`. `create_expander` accepts `controller_id`, `name`, `number`. `update_expander` accepts `expander_id`, `name`, `number`. `delete_expander` accepts `expander_id`. All tools are `PHYSICAL ACTION:` and accept a `preview` boolean.

@@ -44,6 +44,11 @@ Each `zone` entry SHALL include the zone's basic fields plus `settings` (the rea
 - **WHEN** an MCP client inspects any zone entry in the snapshot
 - **THEN** the entry contains a `_unreadable_fields` array listing the field names whose values are written via `update_zone_settings` but not surfaced by any read query, so the AI restoring knows which fields cannot be inferred from this snapshot alone
 
+#### Scenario: Snapshot captures units on LocalizedValueType fields
+
+- **WHEN** an MCP client inspects any LocalizedValueType-derived field in the snapshot (e.g. `controller.watering_triggers.extend_water_temperature`, `monitoring_observed.water_flow_rate`)
+- **THEN** the value is an object `{ value, unit }` (not a bare number), so a unit-preference change between capture and restore is detectable
+
 ### Requirement: Snapshot envelope is versioned
 
 The snapshot JSON SHALL include `snapshot_version` as a top-level integer field as informational provenance. The version SHALL increment whenever the snapshot shape changes substantively. **The version field is not a stable wire-format contract**: the AI is the sole consumer at restore time, and may tolerate any shape it understands. This change bumps the version to `2`.

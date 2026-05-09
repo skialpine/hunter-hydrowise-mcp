@@ -14,10 +14,12 @@ The snapshot format is mutable (the AI is the sole consumer at restore time), so
 ## What Changes
 
 - **Extend `dump_controller_snapshot`** to inline the full StandardProgram detail for every program, plus controller location, timezone, master valve, expanders, modules, controller notes, run-time groups; per-zone master-valve override and zone notes.
+- **Capture units on every `LocalizedValueType` field** (watering triggers, monitoring observed values, etc.) so a unit-pref change between snapshot and restore can't silently rewrite °F as °C. The serializer emits `{ value, unit }` pairs instead of bare numbers; the restore recipe verifies unit match before applying.
 - **Add `update_location`** tool — wraps `updateLocation` + `updateLocationCoordinates` mutations for restoring controller geolocation.
 - **Add `update_controller_master_valve`** tool — wraps `updateControllerMasterValve` for restoring the master-valve zone assignment.
 - **Add `update_controller_program_mode`** tool — wraps `updateControllerProgramMode` for switching STANDARD↔ADVANCED (precondition for Phase 3 Advanced restore).
 - **Add `hibernate_controller` and `wake_controller`** tools — wrap `hibernateController` / `wakeController`.
+- **Add zone CRUD** — `create_zone`, `delete_zone` tools wrapping `createZoneAdvanced` / `deleteZone`. Without these, restore can't recreate a controller from scratch (it can only update zones that already exist).
 - **Add note CRUD** — `create/update/delete_zone_note`, `create/update/delete_controller_note`.
 - **Add expander CRUD** — `create/update/delete_expander`.
 - **Bump snapshot generator version** marker (informational only — not a wire-format contract).
@@ -31,6 +33,9 @@ The snapshot format is mutable (the AI is the sole consumer at restore time), so
 ### New Capabilities
 - `irrigation-controller-config`: tools that mutate controller-level settings (location, master valve, program mode, hibernate/wake, expanders) — the write path needed for restore.
 - `irrigation-notes`: read + write tools for `ZoneNote` and `ControllerNote` types.
+
+### Modified Capabilities (continued)
+- `irrigation-status`: also gains `create_zone` and `delete_zone` tools (zones are status-adjacent infrastructure, not scheduling).
 
 ## Impact
 

@@ -14,6 +14,7 @@
 - [ ] 2.4 Add `HIBERNATE_CONTROLLER_MUTATION` and `WAKE_CONTROLLER_MUTATION`
 - [ ] 2.5 Add `CREATE_EXPANDER_MUTATION`, `UPDATE_EXPANDER_MUTATION`, `DELETE_EXPANDER_MUTATION`
 - [ ] 2.6 Add note CRUD mutations: `CREATE/UPDATE/DELETE_CONTROLLER_NOTE_MUTATION`, `CREATE/UPDATE/DELETE_ZONE_NOTE_MUTATION`
+- [ ] 2.7 Add `CREATE_ZONE_ADVANCED_MUTATION` and `DELETE_ZONE_MUTATION` (the Advanced variant; the deprecated `createZone` is intentionally not wrapped)
 
 ## 3. API layer
 
@@ -25,12 +26,17 @@
 - [ ] 3.6 Add `HydrawiseApi.hibernateController(controllerId)` and `wakeController(controllerId)`
 - [ ] 3.7 Add `HydrawiseApi.createExpander / updateExpander / deleteExpander`
 - [ ] 3.8 Add note CRUD methods to `HydrawiseApi` (controller and zone variants)
+- [ ] 3.9 Add `HydrawiseApi.createZone(payload)` (wraps `createZoneAdvanced`) and `deleteZone(zoneId)` methods
 
 ## 4. Serializers
 
 - [ ] 4.1 Extend `serializeController` to include `location`, `time_zone`, `master_valve`, `expanders`, `modules`, `controller_notes`, `run_time_groups`
 - [ ] 4.2 Extend `serializeZoneSettings` to include `master_valve_override` (from `Zone.masterValve`), `zone_notes` array, and a top-level `_unreadable_fields` array listing the writable-but-not-readable field names
 - [ ] 4.3 Add `serializeLocation`, `serializeExpander`, `serializeRunTimeGroup`, `serializeNote` (covers both controller and zone notes)
+- [ ] 4.4 Update `serializeWateringTriggers` to emit `{ value, unit }` for every LocalizedValueType field (extend_water_temperature, suspend_water_*_, suspend_wind, reduce_water_temperature, etc.). Capture the unit string verbatim from the API.
+- [ ] 4.5 Update `serializeZoneSettings` `monitoring_observed` block to emit `{ value, unit }` for water_flow_rate and electric_current entries.
+- [ ] 4.6 Update `serializeRunSummaryDetails` `total_water_volume` to preserve `unit` (already does — verify).
+- [ ] 4.7 Update `serializeRunEvent` `reported_water_usage` and `reported_current` to preserve `unit` (verify already correct).
 
 ## 5. New write tools — `irrigation-controller-config`
 
@@ -40,7 +46,9 @@
 - [ ] 5.4 Implement `update_controller_program_mode` — `controller_id` + `program_mode: 'STANDARD' | 'ADVANCED'`; preview supported
 - [ ] 5.5 Implement `hibernate_controller` and `wake_controller` — `controller_id` only
 - [ ] 5.6 Implement expander CRUD — `create/update/delete_expander`
-- [ ] 5.7 Register the new tool group in `src/server.ts`'s `buildMcpServer`
+- [ ] 5.7 Implement `create_zone(controller_id, name, number, ...zone-config-fields)` — `PHYSICAL ACTION:`, preview. Wraps `createZoneAdvanced` with the same writable-zone shape as `update_zone_settings`.
+- [ ] 5.8 Implement `delete_zone(zone_id)` — `PHYSICAL ACTION:`, preview. Note in description that this is irreversible.
+- [ ] 5.9 Register the new tool group in `src/server.ts`'s `buildMcpServer`
 
 ## 6. New write + read tools — `irrigation-notes`
 
@@ -66,8 +74,9 @@
 - [ ] 8.2 Unit tests for the extended `serializeController` and `serializeZoneSettings` (including `_unreadable_fields` array contents)
 - [ ] 8.3 Unit tests for new API methods (mutation variable shape) — at minimum `updateLocation` (both halves), `updateControllerMasterValve`, `updateControllerProgramMode`, expander CRUD, note CRUD
 - [ ] 8.4 Integration test: `dump_controller_snapshot` returns a `snapshot_version: 2` envelope with all new fields populated when the fake API returns the expanded read shapes
-- [ ] 8.5 Integration test for each new write tool's preview path (mirrors the `previewApply.test.ts` pattern)
+- [ ] 8.5 Integration test for each new write tool's preview path (mirrors the `previewApply.test.ts` pattern), including `create_zone` and `delete_zone`
 - [ ] 8.6 Update `tests/integration/http.test.ts` `tools/list` assertion to include the new tool names
+- [ ] 8.7 Unit test for unit capture: `serializeWateringTriggers` emits `{ value: 96.99998, unit: "F" }` (or whatever the fixture says) instead of bare numbers
 
 ## 9. Documentation
 

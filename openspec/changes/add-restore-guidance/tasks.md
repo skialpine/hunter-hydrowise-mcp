@@ -21,15 +21,33 @@
 - [ ] 3.3 Bump `snapshot_version` to 3 (informational)
 - [ ] 3.4 Update `dump_controller_snapshot` description
 
-## 4. Skill file
+## 4. Skill files
 
-- [ ] 4.1 Create `.claude/skills/restore-irrigation-backup.md` (or appropriate skills directory per project layout)
-- [ ] 4.2 Document trigger phrases: "restore my irrigation backup", "apply this snapshot", "restore from snapshot"
-- [ ] 4.3 Document inputs: snapshot file path or pasted JSON content
-- [ ] 4.4 Document workflow: load → verify target controller → walk recipe → preview each → confirm with user → execute → report
-- [ ] 4.5 Document `_caveats` handling: present up-front, require acknowledgment
-- [ ] 4.6 Document failure handling: fail-fast, report the failed step, leave the controller in whatever state was achieved
-- [ ] 4.7 Document the "capture-fresh-snapshot-before-restore" rule as a savepoint
+### 4.A — Restore skill
+
+- [ ] 4.A.1 Create `.claude/skills/restore-irrigation-backup.md`
+- [ ] 4.A.2 Document trigger phrases: "restore my irrigation backup", "apply this snapshot", "restore from snapshot"
+- [ ] 4.A.3 Document inputs: snapshot file path or pasted JSON content
+- [ ] 4.A.4 Document workflow: load → verify target controller → diff zones (name+number) → walk recipe → preview each step → confirm with user → execute → report
+- [ ] 4.A.5 Document `_caveats` handling: present up-front, require acknowledgment
+- [ ] 4.A.6 Document failure handling: fail-fast, report the failed step, leave the controller in whatever state was achieved
+- [ ] 4.A.7 Document the "capture-fresh-snapshot-before-restore" rule as a savepoint
+- [ ] 4.A.8 Document the unit-mismatch refusal: if `_caveats` includes a unit-pref mismatch, restore halts until reconciled
+
+### 4.B — Capture skill
+
+- [ ] 4.B.1 Create `.claude/skills/capture-irrigation-snapshot.md`
+- [ ] 4.B.2 Document trigger phrases: "back up my irrigation", "snapshot my controller", "capture irrigation state"
+- [ ] 4.B.3 Document inputs: required `controller_id`, optional `output_dir` (default `snapshots/`)
+- [ ] 4.B.4 Document workflow:
+    1. Call `dump_controller_snapshot(controller_id)`
+    2. Write snapshot JSON to `<output_dir>/<controller-name>-<controller-id>-<ISO-timestamp>Z.json`
+    3. Inspect `<output_dir>/history/` for prior report matching this controller; determine delta range
+    4. Call `get_watering_report(controller_id, from, until)`
+    5. Write report JSON to `<output_dir>/history/<controller-id>-<from-date>_to_<until-date>.json`
+    6. Report captured coverage
+- [ ] 4.B.5 Document filename conventions (sortable ISO timestamps, controller-id namespacing for multi-controller accounts)
+- [ ] 4.B.6 Document the rationale: Hydrawise only retains ~1 year of report data; per-snapshot delta capture builds permanent multi-year history
 
 ## 5. Tests
 

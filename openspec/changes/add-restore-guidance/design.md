@@ -136,17 +136,43 @@ The recipe builder also examines the captured data and emits `_caveats` strings:
 
 The list is short and authored from the known limitations. New caveats are added as new limitations are discovered.
 
-### Skill file is the entry point for the AI restore workflow
+### Two skill files, both shipped in the repo
 
-`.claude/skills/restore-irrigation-backup.md` documents:
+#### `.claude/skills/restore-irrigation-backup.md`
+
+The AI restore workflow. Loaded when the user asks to restore.
 
 - When to load: user asks "restore my irrigation backup", "apply this snapshot", etc.
 - Required input: a snapshot file path or pasted JSON.
 - Steps: load file, parse, verify target controller, walk `_restore_recipe`, preview each step, confirm with user, execute, report.
+- Zone-existence diff: AI compares snapshot zones to live zones by `name + number`; recipe steps include `create_zone` / `delete_zone` calls as needed (added by recipe builder when the snapshot's zones don't match the live state).
 - Failure handling: stop on first error, report which step failed and what state was achieved before the failure.
 - `_caveats` handling: present them to the user up-front and require acknowledgment.
+- Pre-restore snapshot recommendation: capture a fresh snapshot of the target controller before restore (acts as a savepoint).
 
-This is a Claude Code skill, not an MCP tool. The AI reads the skill before starting the workflow.
+#### `.claude/skills/capture-irrigation-snapshot.md`
+
+The AI capture workflow. Loaded when the user asks to back up.
+
+- When to load: user asks "back up my irrigation", "snapshot the controller", "capture irrigation state", etc.
+- Steps:
+  1. Call `dump_controller_snapshot(controller_id)`.
+  2. Write the snapshot JSON to `snapshots/<controller-name>-<controller-id>-<ISO-timestamp>Z.json`.
+  3. Look at `snapshots/history/` for the most recent watering-report file matching this controller. Determine the delta date range:
+     - If a previous report exists: `from = previous report's until`, `until = now`.
+     - If no previous report exists: `from = 1 year ago` (max retention), `until = now`.
+  4. Call `get_watering_report(controller_id, from, until)`.
+  5. Write the report JSON to `snapshots/history/<controller-id>-<from-date>_to_<until-date>.json`.
+  6. Report what was captured + total accumulated history coverage.
+- Future captures append to history; multi-year coverage survives Hydrawise's ~1-year retention.
+- Both files live under `snapshots/`, which is gitignored (per existing repo policy).
+
+**Why the capture skill exists:**
+- The user wants permanent watering history, but Hydrawise only retains ~1 year. Periodic capture surviving in `snapshots/history/` solves this.
+- The user explicitly rejected scheduled capture (no cron). Manual capture via skill keeps it AI-mediated and visible.
+- Embedding the capture procedure in a skill (vs. hardcoded) lets the user adjust the lookback / file naming / directory structure without code changes.
+
+**Both skills are shipped in the repo** at `.claude/skills/`. `.claude/` already has `settings.local.json` checked in (project-level Claude config). Skills travel with the code; users who clone the repo get them automatically. Users who prefer personal skills can copy to `~/.claude/skills/`.
 
 ### Round-trip test detects capture/restore gaps
 

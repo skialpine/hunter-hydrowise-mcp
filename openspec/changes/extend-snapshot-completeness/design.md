@@ -37,7 +37,9 @@ Reusable schedules (referenced by `schedule_adjustment_ids`) have no CRUD mutati
 **Goals:**
 - Snapshot is self-sufficient for STANDARD-mode restore: every read field has a write tool path, or is documented as "manual restore only" with a `_caveat`.
 - Snapshot inlines the StandardProgram details so a restore doesn't need to call additional tools to reconstruct the schedule.
-- New write tools for the controller-config category (location, master valve, program mode, expanders) and notes category, following existing project conventions (`runTool`, `previewOrApply`, `PHYSICAL ACTION:`).
+- Snapshot preserves units on every `LocalizedValueType` field (temperatures, wind, rain, water flow, current) so unit drift between capture and restore is detectable and refuse-able.
+- New write tools for the controller-config category (location, master valve, program mode, expanders, **zone CRUD**) and notes category, following existing project conventions (`runTool`, `previewOrApply`, `PHYSICAL ACTION:`).
+- Zone CRUD (`create_zone`, `delete_zone`) is included so restore can recreate zones from scratch on a new controller, not just update existing ones.
 - The "writable but not readable" zone fields (watering_mode, etc.) get explicit `_unreadable_fields` markers in the snapshot output so the AI knows what's missing during restore.
 
 **Non-Goals:**
@@ -48,6 +50,34 @@ Reusable schedules (referenced by `schedule_adjustment_ids`) have no CRUD mutati
 - Reusable schedule CRUD — not exposed by the API.
 
 ## Decisions
+
+### Units are captured per LocalizedValueType field
+
+Hydrawise stores temperatures, wind speeds, rain accumulation, water flow, and electrical current as `LocalizedValueType { value, unit, longUnit }`. The shipped serializer drops `unit`, returning bare numbers. That makes the snapshot ambiguous: a captured `extend_water_temperature: 96.99998` could be °F (97°F) or °C (97°C ≈ 207°F). If the user changes their account's unit preference between capture and restore, the restore writes the same numeric value into a different unit and silently cooks or floods.
+
+This phase captures `{ value, unit }` per LocalizedValueType field. The recipe builder (Phase 4) emits a `_caveat` when the snapshot's units don't match the live account's current unit preference, and the restore skill refuses to apply until the user reconciles.
+
+**Alternative considered:** convert all values to a canonical unit (always °F, always inches) at capture time, write back in canonical unit. Rejected because `updateWateringTriggers` accepts a bare Float in the user's account unit; we'd have to know the live unit pref to convert back, which is the same lookup the unit-mismatch check already does.
+
+### Zone CRUD is in scope
+
+Original `add-schedule-management` excluded `createZone`/`deleteZone` because zones are physical-wiring concerns. The user's restore requirement now overrides this: restoring to a fresh controller (recovery, account migration) requires recreating zones from scratch. Both `createZoneAdvanced` and `deleteZone` mutations are exposed by the schema.
+
+`create_zone` wraps `createZoneAdvanced` (the non-deprecated variant) — same args as `update_zone_settings` minus `zone_id`, plus `controller_id`. Returns the created zone's `id`.
+
+`delete_zone` wraps `deleteZone(zoneId)`. Like all destructive mutations, it carries `PHYSICAL ACTION:` and supports preview.
+
+**Restore semantics with zone CRUD:**
+
+- Capture phase: snapshot records every zone's full settings.
+- Restore phase: AI compares snapshot zones against live zones by `name + number` (id may differ post-restore on a fresh controller).
+  - Snapshot zone present, live zone missing → `create_zone` with full settings, then `update_zone_settings` for any monitoring/cycle-soak fields not on the create form.
+  - Snapshot zone missing, live zone present → `delete_zone` (after user confirmation; this is destructive).
+  - Both present → `update_zone_settings`.
+
+The recipe builder (Phase 4) emits these comparison-driven steps. For initial Phase 1, just the tools exist; the recipe wiring is Phase 4.
+
+**Non-Goal stays:** the original `createZone` (deprecated) variant is not wrapped — only the Advanced version, which matches our existing `update_zone_settings` shape.
 
 ### Snapshot format is mutable; no migration ceremony
 
