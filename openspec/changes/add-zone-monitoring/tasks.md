@@ -50,8 +50,8 @@
 ## 8. Manual verification
 
 - [x] 8.1 `npm run build` succeeds; `tools/list` includes `set_zone_baseline` and the `start_zone` / `start_all_zones` tools have `learn_current_from_next_run` and `learn_flow_from_next_run` in their input schemas
-- [ ] 8.2 `get_zone_settings` against the user's account (e.g. zone 2063113) returns a `monitoring_observed` block populated with `operating_ranges` and `measured_medians` — **deferred for user verification**
-- [ ] 8.3 `update_zone_settings` with `preview: true` against a real zone returns the planned `updateZoneAdvanced` payload — **deferred for user verification**
-- [ ] 8.4 `set_zone_baseline` with `preview: true` returns the planned `setBaselineValues` payload — **deferred for user verification**
-- [ ] 8.5 Once previews look correct: run a real `start_zone` with `learn_flow_from_next_run: true` for 1 minute on a test zone, verify the GUI shows the learn-flow flag enabled — **deferred for user verification**
+- [x] 8.2 `get_zone_settings` against zone 2062869 returns a `monitoring_observed` block: `operating_ranges.electric_current: 410`, with cycle/soak times matching the GUI exactly (3-min cycle, 30-min soak)
+- [x] 8.3 `update_zone_settings` with `preview: true` returns the planned `updateZoneAdvanced` payload with all 27 variables populated, including the four monitoring fields and the booleanized `cycle_soak_enable`/`run_next_available_start_time`
+- [x] 8.4 `set_zone_baseline` with `preview: true` returns the planned `setBaselineValues` payload, no upstream call dispatched
+- [x] 8.5 Real `start_zone(zone_id=2062869, minutes=1, learn_flow_from_next_run=true)` returned `OK — "Starting 1. Spruce to Kitchen now"`, zone visibly ran in the GUI
 - [x] 8.6 `openspec validate add-zone-monitoring` passes
