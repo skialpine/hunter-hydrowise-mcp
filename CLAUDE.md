@@ -59,10 +59,12 @@ src/
     queries.ts         hand-written GraphQL strings + types
     api.ts             HydrawiseApi typed wrappers
   tools/
-    _helpers.ts        resolveUntil, runTool, jsonResult
-    serializers.ts     normalize Hydrawise field names
-    status.ts          read-only tools
-    control.ts         control tools (PHYSICAL ACTION:)
+    _helpers.ts        resolveUntil, runTool, jsonResult, previewOrApply
+    serializers.ts     normalize Hydrawise field names + read→writable translation
+    status.ts          read-only status tools
+    control.ts         runtime control tools (start/stop/suspend/resume) — PHYSICAL ACTION:
+    scheduling.ts      schedule read+write tools (zone settings, programs, triggers, seasonal adjustments) — writes are PHYSICAL ACTION: with preview support
+    backup.ts          dump_controller_snapshot — versioned JSON snapshot
 tests/
   unit/                vitest unit tests
   integration/         supertest integration tests against buildApp()

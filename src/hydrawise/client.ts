@@ -14,6 +14,10 @@ export interface HydrawiseClient {
     variables: Variables,
     extract: (data: Record<string, unknown>) => StatusCodeAndSummary,
   ): Promise<StatusCodeAndSummary>;
+  /** Like {@link mutate} but for mutations that don't return StatusCodeAndSummary
+   *  (e.g. Boolean, Int, or an entity). The caller is responsible for interpreting
+   *  the raw response — `null`/`false` are NOT auto-mapped to errors. */
+  mutateRaw<TResult>(document: string, variables: Variables): Promise<TResult>;
 }
 
 class GraphQLHydrawiseClient implements HydrawiseClient {
@@ -49,6 +53,15 @@ class GraphQLHydrawiseClient implements HydrawiseClient {
       throw new HydrawiseMutationError(result.summary || `mutation returned ${result.status}`);
     }
     return result;
+  }
+
+  async mutateRaw<TResult>(document: string, variables: Variables): Promise<TResult> {
+    const headers = { Authorization: await this.auth.getAuthHeader() };
+    try {
+      return await this.client.request<TResult>(document, variables, headers);
+    } catch (err) {
+      throw mapClientError(err);
+    }
   }
 }
 

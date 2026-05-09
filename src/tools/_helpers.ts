@@ -66,3 +66,18 @@ export async function runTool(handler: () => Promise<ToolResult>): Promise<ToolR
     return errorResult('internal_error', 'unknown error');
   }
 }
+
+/** When `preview` is true, return the planned mutation as a JSON Tool result
+ *  without invoking `apply`. Otherwise call `apply` and serialize its result. */
+export async function previewOrApply<TVars, TResult>(
+  operation: string,
+  variables: TVars,
+  preview: boolean | undefined,
+  apply: () => Promise<TResult>,
+): Promise<ToolResult> {
+  if (preview) {
+    return jsonResult({ preview: true, operation, variables });
+  }
+  const result = await apply();
+  return jsonResult({ preview: false, operation, result });
+}

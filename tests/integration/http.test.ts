@@ -111,11 +111,13 @@ describe('streamable HTTP transport', () => {
     const names = toolsResp.result.tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        // v1 status
         'get_user',
         'list_controllers',
         'get_controller',
         'list_zones',
         'get_zone',
+        // v1 control
         'start_zone',
         'stop_zone',
         'start_all_zones',
@@ -124,6 +126,27 @@ describe('streamable HTTP transport', () => {
         'resume_zone',
         'suspend_all_zones',
         'resume_all_zones',
+        // schedule reads
+        'get_zone_settings',
+        'list_programs',
+        'list_program_start_times_for_zone',
+        'get_seasonal_adjustments',
+        'get_watering_triggers',
+        // schedule writes
+        'update_zone_settings',
+        'update_seasonal_adjustments',
+        'update_watering_triggers',
+        'create_program_start_time',
+        'update_program_start_time',
+        'delete_program_start_time',
+        'create_standard_program',
+        'update_standard_program',
+        'delete_standard_program',
+        'create_watering_program',
+        'update_watering_program',
+        'delete_watering_program',
+        // backup
+        'dump_controller_snapshot',
       ].sort(),
     );
   });
@@ -162,6 +185,42 @@ describe('streamable HTTP transport', () => {
       .set('Host', 'evil.example.com')
       .send(INITIALIZE_BODY);
     expect(res.status).toBe(403);
+  });
+
+  it('every write tool description begins with PHYSICAL ACTION:', async () => {
+    const app = makeApp();
+    const init = await initialize(app);
+    const sessionId = init.headers['mcp-session-id'];
+    const res = await request(app)
+      .post('/mcp')
+      .set('Accept', 'application/json, text/event-stream')
+      .set('Content-Type', 'application/json')
+      .set('mcp-session-id', sessionId)
+      .send({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} });
+    const body = res.text
+      .split('\n')
+      .filter((l) => l.startsWith('data:'))
+      .map((l) => JSON.parse(l.slice('data:'.length).trim()));
+    const toolsResp = body.find((b) => b.id === 9) as {
+      result: { tools: { name: string; description?: string }[] };
+    };
+    const writeTools = toolsResp.result.tools.filter(
+      (t) =>
+        t.name.startsWith('update_') ||
+        t.name.startsWith('create_') ||
+        (t.name.startsWith('delete_') && t.name !== 'delete_program_start_time') ||
+        t.name === 'delete_program_start_time' ||
+        t.name === 'delete_standard_program' ||
+        t.name === 'delete_watering_program' ||
+        t.name.startsWith('start_') ||
+        t.name.startsWith('stop_') ||
+        t.name.startsWith('suspend_') ||
+        t.name.startsWith('resume_'),
+    );
+    expect(writeTools.length).toBeGreaterThan(0);
+    for (const tool of writeTools) {
+      expect(tool.description ?? '').toMatch(/^PHYSICAL ACTION:/);
+    }
   });
 
   it('terminates a session on DELETE', async () => {

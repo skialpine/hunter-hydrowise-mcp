@@ -1,0 +1,496 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { ConfigError } from '../errors.js';
+import type { HydrawiseApi } from '../hydrawise/api.js';
+import {
+  serializeProgramStartTime,
+  serializeWateringTriggers,
+  serializeZoneSettings,
+} from './serializers.js';
+import { jsonResult, previewOrApply, runTool } from './_helpers.js';
+
+const PHYSICAL = 'PHYSICAL ACTION:';
+
+// ----- Zone settings ---------------------------------------------------------
+
+const ZoneIdInput = { zone_id: z.number().int() };
+
+const ZoneWritableShape = {
+  zone_id: z.number().int(),
+  icon: z.number().int().nullable(),
+  name: z.string(),
+  number: z.number().int(),
+  watering_mode: z.number().int(),
+  global_master_valve: z.number().int(),
+  schedule_adjustment_ids: z.array(z.number().int()),
+  watering_adjustment: z.number().int(),
+  watering_type: z.number().int(),
+  run_time: z.number().int().nullable(),
+  watering_frequency_mode: z.number().int(),
+  fixed_watering_frequency: z.number().int().nullable(),
+  smart_watering_frequency: z.number().int().nullable(),
+  virtual_solar_sync_watering_frequency: z.number().int().nullable(),
+  run_next_available_start_time: z.number().int().nullable(),
+  pre_configured_watering_schedule_id: z.number().int().nullable(),
+  cycle_soak_enable: z.number().int().nullable(),
+  cycle_custom_time: z.number().int().nullable(),
+  soak_custom_time: z.number().int().nullable(),
+  factors: z.array(z.number().int()).nullable(),
+  sensor_ids: z.array(z.number().int()).nullable(),
+  reusable_schedule: z.boolean().nullable(),
+  reusable_schedule_name: z.string().nullable(),
+  preview: z.boolean().optional(),
+};
+
+// ----- Seasonal adjustments --------------------------------------------------
+
+const ControllerIdInput = { controller_id: z.number().int() };
+
+const SeasonalAdjustmentsInput = {
+  controller_id: z.number().int(),
+  factors: z.array(z.number().int()).length(12, 'factors must have exactly 12 entries'),
+  preview: z.boolean().optional(),
+};
+
+// ----- Watering triggers -----------------------------------------------------
+
+const WateringTriggersInput = {
+  controller_id: z.number().int(),
+  extend_water_temperature: z.number(),
+  extend_water_temperature_enabled: z.boolean(),
+  extend_water_temperature_percentage: z.number().int(),
+  extend_water_humidity: z.number().int(),
+  extend_water_humidity_enabled: z.boolean(),
+  suspend_water_week_rain: z.number(),
+  suspend_water_rain_days: z.number().int(),
+  suspend_water_week_rain_enabled: z.boolean(),
+  suspend_water_rain: z.number(),
+  suspend_water_rain_enabled: z.boolean(),
+  suspend_water_temperature: z.number(),
+  suspend_water_temperature_enabled: z.boolean(),
+  suspend_probability_of_precipitation: z.number().int(),
+  suspend_probability_of_precipitation_enabled: z.boolean(),
+  suspend_wind: z.number(),
+  suspend_wind_enabled: z.boolean(),
+  enable_evapotranspiration_forecast_temperature: z.boolean(),
+  enable_evapotranspiration_forecast_rain: z.boolean(),
+  reduce_water_temperature_enabled: z.boolean(),
+  reduce_water_temperature: z.number(),
+  reduce_water_temperature_percentage: z.number().int(),
+  preview: z.boolean().optional(),
+};
+
+// ----- Program start times ---------------------------------------------------
+
+const ProgramStartTimeBaseShape = {
+  controller_id: z.number().int(),
+  apply_all: z.boolean(),
+  zones: z.array(z.number().int()),
+  schedules: z.array(z.number().int()),
+  time: z.string(),
+  watering_type: z.number().int(),
+  time_type: z.string(),
+  sunday: z.number().int(),
+  monday: z.number().int(),
+  tuesday: z.number().int(),
+  wednesday: z.number().int(),
+  thursday: z.number().int(),
+  friday: z.number().int(),
+  saturday: z.number().int(),
+};
+
+const CreateProgramStartTimeInput = {
+  ...ProgramStartTimeBaseShape,
+  preview: z.boolean().optional(),
+};
+
+const UpdateProgramStartTimeInput = {
+  id: z.number().int(),
+  ...ProgramStartTimeBaseShape,
+  preview: z.boolean().optional(),
+};
+
+const DeleteProgramStartTimeInput = {
+  id: z.number().int(),
+  controller_id: z.number().int(),
+  preview: z.boolean().optional(),
+};
+
+// ----- Standard programs -----------------------------------------------------
+
+const ZoneRunTimeShape = z.object({
+  zone_number: z.number().int(),
+  run_time_group_id: z.number().int().nullable().optional(),
+  run_duration: z.number().int().nullable().optional(),
+});
+
+const StandardProgramBaseShape = {
+  controller_id: z.number().int(),
+  name: z.string(),
+  program_type: z.number().int(),
+  day_pattern: z.string(),
+  standard_program_day_pattern: z.string().nullable(),
+  interval: z.number().int().nullable(),
+  series_start: z.number().int().nullable(),
+  start_times: z.array(z.string()),
+  zone_run_times: z.array(ZoneRunTimeShape),
+  schedule_adjustment_ids: z.array(z.number().int()),
+  seasonal_adjustment_factors: z.array(z.number().int()),
+  valid_from: z.number().int().nullable(),
+  valid_to: z.number().int().nullable(),
+  ignore_rain_sensor: z.boolean().nullable(),
+};
+
+const CreateStandardProgramInput = { ...StandardProgramBaseShape, preview: z.boolean().optional() };
+const UpdateStandardProgramInput = {
+  program_id: z.number().int(),
+  ...StandardProgramBaseShape,
+  preview: z.boolean().optional(),
+};
+const DeleteStandardProgramInput = {
+  program_id: z.number().int(),
+  controller_id: z.number().int(),
+  preview: z.boolean().optional(),
+};
+
+// ----- Watering programs -----------------------------------------------------
+
+const WateringProgramTypeEnum = z.enum(['Time', 'Smart', 'VirtualSolarSync'] as const);
+
+const WateringProgramBaseShape = {
+  program_type: WateringProgramTypeEnum,
+  watering_program_name: z.string(),
+  watering_program_type: z.number().int().nullable(),
+  controller_id: z.number().int(),
+  schedule_adjustment_ids: z.array(z.number().int()).nullable(),
+  seasonal_adjustment: z.array(z.number().int()).nullable(),
+  fixed_watering_run_time: z.number().int().optional(),
+  fixed_watering_frequency_mode: z.number().int().optional(),
+  fixed_watering_frequency_value: z.number().int().nullable().optional(),
+  watering_program_adjustment: z.number().int().nullable().optional(),
+  smart_watering_run_time: z.number().int().optional(),
+  smart_watering_frequency_value: z.number().int().optional(),
+  virtual_solar_sync_watering_run_time: z.number().int().optional(),
+  virtual_solar_sync_watering_frequency_mode: z.number().int().optional(),
+  virtual_solar_sync_watering_frequency_value: z.number().int().nullable().optional(),
+};
+
+const CreateWateringProgramInput = {
+  ...WateringProgramBaseShape,
+  preview: z.boolean().optional(),
+};
+const UpdateWateringProgramInput = {
+  program_id: z.number().int(),
+  ...WateringProgramBaseShape,
+  preview: z.boolean().optional(),
+};
+const DeleteWateringProgramInput = {
+  program_id: z.number().int(),
+  preview: z.boolean().optional(),
+};
+
+const ProgramTypeReadInput = {
+  controller_id: z.number().int(),
+};
+
+// ----- Registration ----------------------------------------------------------
+
+export function registerSchedulingTools(server: McpServer, api: HydrawiseApi): void {
+  // -- Reads ------------------------------------------------------------------
+
+  server.registerTool(
+    'get_zone_settings',
+    {
+      description:
+        'Return the zone watering settings in the writable shape used by `update_zone_settings`. ' +
+        'Some fields may be null because the read schema does not expose them; supply them ' +
+        'explicitly when calling the write tool.',
+      inputSchema: ZoneIdInput,
+    },
+    async ({ zone_id }) =>
+      runTool(async () => {
+        const zone = await api.getZoneFull(zone_id);
+        if (!zone) return jsonResult({ error: `zone ${zone_id} not found` });
+        return jsonResult(serializeZoneSettings(zone));
+      }),
+  );
+
+  server.registerTool(
+    'list_programs',
+    {
+      description:
+        'List the programs configured on a controller. Each entry has a `program_type` ' +
+        'discriminator (`Standard`, `Advanced`, etc.) plus basic fields (id, name, applies_to_zone_ids).',
+      inputSchema: ProgramTypeReadInput,
+    },
+    async ({ controller_id }) =>
+      runTool(async () => jsonResult(await api.getPrograms(controller_id))),
+  );
+
+  server.registerTool(
+    'list_program_start_times_for_zone',
+    {
+      description:
+        'List the program start times associated with a single zone. Use `dump_controller_snapshot` ' +
+        'to see start times grouped per zone for the whole controller.',
+      inputSchema: ZoneIdInput,
+    },
+    async ({ zone_id }) =>
+      runTool(async () => {
+        const starts = await api.getProgramStartTimesForZone(zone_id);
+        return jsonResult(starts.map(serializeProgramStartTime));
+      }),
+  );
+
+  server.registerTool(
+    'get_seasonal_adjustments',
+    {
+      description: 'Return the controller-level seasonal adjustment factors as a 12-int array.',
+      inputSchema: ControllerIdInput,
+    },
+    async ({ controller_id }) =>
+      runTool(async () => jsonResult({ factors: await api.getSeasonalAdjustments(controller_id) })),
+  );
+
+  server.registerTool(
+    'get_watering_triggers',
+    {
+      description:
+        "Return the controller's watering triggers (rain/temp/humidity/wind) in the writable shape " +
+        'used by `update_watering_triggers`.',
+      inputSchema: ControllerIdInput,
+    },
+    async ({ controller_id }) =>
+      runTool(async () => {
+        const triggers = await api.getWateringTriggers(controller_id);
+        if (!triggers) return jsonResult({ error: `triggers not available for controller ${controller_id}` });
+        return jsonResult(serializeWateringTriggers(triggers));
+      }),
+  );
+
+  // -- Writes -----------------------------------------------------------------
+
+  server.registerTool(
+    'update_zone_settings',
+    {
+      description: `${PHYSICAL} apply a full writable zone payload (see \`get_zone_settings\` for shape). Pass \`preview: true\` to see what would be sent without dispatching.`,
+      inputSchema: ZoneWritableShape,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('updateZone', payload, preview, async () => api.updateZone(payload));
+      }),
+  );
+
+  server.registerTool(
+    'update_seasonal_adjustments',
+    {
+      description: `${PHYSICAL} replace the 12 seasonal adjustment factors on a controller. \`factors\` must be exactly 12 ints. Pass \`preview: true\` to see what would be sent.`,
+      inputSchema: SeasonalAdjustmentsInput,
+    },
+    async ({ controller_id, factors, preview }) =>
+      runTool(async () =>
+        previewOrApply(
+          'updateSeasonalAdjustments',
+          { controller_id, factors },
+          preview,
+          async () => api.updateSeasonalAdjustments(controller_id, factors),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'update_watering_triggers',
+    {
+      description: `${PHYSICAL} replace the controller-level watering triggers (rain/temp/humidity/wind) with the full payload. Pass \`preview: true\` to dry-run.`,
+      inputSchema: WateringTriggersInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('updateWateringTriggers', payload, preview, async () =>
+          api.updateWateringTriggers(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'create_program_start_time',
+    {
+      description: `${PHYSICAL} create a new program start time. Pass \`preview: true\` to dry-run.`,
+      inputSchema: CreateProgramStartTimeInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('createProgramStartTime', payload, preview, async () =>
+          api.createProgramStartTime(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'update_program_start_time',
+    {
+      description: `${PHYSICAL} update an existing program start time with the full payload. Pass \`preview: true\` to dry-run.`,
+      inputSchema: UpdateProgramStartTimeInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('updateProgramStartTime', payload, preview, async () =>
+          api.updateProgramStartTime(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'delete_program_start_time',
+    {
+      description: `${PHYSICAL} delete a program start time. Pass \`preview: true\` to dry-run.`,
+      inputSchema: DeleteProgramStartTimeInput,
+    },
+    async ({ id, controller_id, preview }) =>
+      runTool(async () =>
+        previewOrApply('deleteProgramStartTime', { id, controller_id }, preview, async () =>
+          api.deleteProgramStartTime(id, controller_id),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'create_standard_program',
+    {
+      description: `${PHYSICAL} create a new standard program. Pass \`preview: true\` to dry-run.`,
+      inputSchema: CreateStandardProgramInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('createStandardProgram', payload, preview, async () =>
+          api.createStandardProgram(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'update_standard_program',
+    {
+      description: `${PHYSICAL} update an existing standard program with the full payload. Pass \`preview: true\` to dry-run.`,
+      inputSchema: UpdateStandardProgramInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        return previewOrApply('updateStandardProgram', payload, preview, async () =>
+          api.updateStandardProgram(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'delete_standard_program',
+    {
+      description: `${PHYSICAL} delete a standard program. Pass \`preview: true\` to dry-run.`,
+      inputSchema: DeleteStandardProgramInput,
+    },
+    async ({ program_id, controller_id, preview }) =>
+      runTool(async () =>
+        previewOrApply(
+          'deleteStandardProgram',
+          { program_id, controller_id },
+          preview,
+          async () => api.deleteStandardProgram(program_id, controller_id),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'create_watering_program',
+    {
+      description: `${PHYSICAL} create a Time/Smart/VirtualSolarSync watering program. \`program_type\` selects the subtype. Pass \`preview: true\` to dry-run.`,
+      inputSchema: CreateWateringProgramInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        validateWateringProgramSubtype(payload);
+        return previewOrApply(
+          `create${payload.program_type}WateringProgram`,
+          payload,
+          preview,
+          async () => api.createWateringProgram(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'update_watering_program',
+    {
+      description: `${PHYSICAL} update an existing Time/Smart/VirtualSolarSync watering program. \`program_type\` must match the existing subtype. Pass \`preview: true\` to dry-run.`,
+      inputSchema: UpdateWateringProgramInput,
+    },
+    async (input) =>
+      runTool(async () => {
+        const { preview, ...payload } = input;
+        validateWateringProgramSubtype(payload);
+        return previewOrApply(
+          `update${payload.program_type}WateringProgram`,
+          payload,
+          preview,
+          async () => api.updateWateringProgram(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'delete_watering_program',
+    {
+      description: `${PHYSICAL} delete a watering program. Pass \`preview: true\` to dry-run.`,
+      inputSchema: DeleteWateringProgramInput,
+    },
+    async ({ program_id, preview }) =>
+      runTool(async () =>
+        previewOrApply('removeWateringProgram', { program_id }, preview, async () =>
+          api.removeWateringProgram(program_id),
+        ),
+      ),
+  );
+}
+
+function validateWateringProgramSubtype(p: {
+  program_type: 'Time' | 'Smart' | 'VirtualSolarSync';
+  fixed_watering_run_time?: number;
+  fixed_watering_frequency_mode?: number;
+  smart_watering_run_time?: number;
+  smart_watering_frequency_value?: number;
+  virtual_solar_sync_watering_run_time?: number;
+  virtual_solar_sync_watering_frequency_mode?: number;
+}): void {
+  if (p.program_type === 'Time') {
+    if (p.fixed_watering_run_time === undefined || p.fixed_watering_frequency_mode === undefined) {
+      throw new ConfigError(
+        'program_type=Time requires fixed_watering_run_time and fixed_watering_frequency_mode',
+      );
+    }
+  } else if (p.program_type === 'Smart') {
+    if (
+      p.smart_watering_run_time === undefined ||
+      p.smart_watering_frequency_value === undefined
+    ) {
+      throw new ConfigError(
+        'program_type=Smart requires smart_watering_run_time and smart_watering_frequency_value',
+      );
+    }
+  } else {
+    if (
+      p.virtual_solar_sync_watering_run_time === undefined ||
+      p.virtual_solar_sync_watering_frequency_mode === undefined
+    ) {
+      throw new ConfigError(
+        'program_type=VirtualSolarSync requires virtual_solar_sync_watering_run_time and virtual_solar_sync_watering_frequency_mode',
+      );
+    }
+  }
+}

@@ -13,11 +13,13 @@ import { getClient } from './hydrawise/client.js';
 import { bearerGuard, hostGuard, originGuard } from './http/middleware.js';
 import { SessionRegistry } from './http/sessions.js';
 import { createLogger, type Logger } from './logger.js';
+import { registerBackupTools } from './tools/backup.js';
 import { registerControlTools } from './tools/control.js';
+import { registerSchedulingTools } from './tools/scheduling.js';
 import { registerStatusTools } from './tools/status.js';
 
 const PROTOCOL_VERSION = '2025-11-25';
-const PACKAGE_VERSION = '0.1.0';
+const PACKAGE_VERSION = '0.2.0';
 
 export function buildMcpServer(api: HydrawiseApi): McpServer {
   const server = new McpServer({
@@ -26,6 +28,8 @@ export function buildMcpServer(api: HydrawiseApi): McpServer {
   });
   registerStatusTools(server, api);
   registerControlTools(server, api);
+  registerSchedulingTools(server, api);
+  registerBackupTools(server, api);
   return server;
 }
 
