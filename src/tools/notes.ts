@@ -65,7 +65,9 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     async ({ controller_id }) =>
       wrap('list_controller_notes', async () => {
         const controller = await api.getController(controller_id);
-        return jsonResult((controller.controllerNotes ?? []).map(serializeNote));
+        // Schema permits null members in [ControllerNote]!; filter them out before serialization.
+        const notes = (controller.controllerNotes ?? []).filter((n): n is NonNullable<typeof n> => n != null);
+        return jsonResult(notes.map(serializeNote));
       }),
   );
 
@@ -79,7 +81,9 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     async ({ zone_id }) =>
       wrap('list_zone_notes', async () => {
         const zone = await api.getZoneFull(zone_id);
-        return jsonResult((zone.zoneNotes ?? []).map(serializeNote));
+        // Schema permits null members in [ZoneNote]!; filter them out before serialization.
+        const notes = (zone.zoneNotes ?? []).filter((n): n is NonNullable<typeof n> => n != null);
+        return jsonResult(notes.map(serializeNote));
       }),
   );
 

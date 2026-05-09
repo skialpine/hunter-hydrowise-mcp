@@ -332,7 +332,13 @@ export class HydrawiseApi {
     return (data.controller.programs ?? []).map((p) => ({
       id: p.id,
       name: p.name,
-      program_type: p.__typename,
+      // Normalize __typename to the discriminator used by serializeStandardProgram and the
+      // get_program tool's input enum, so snapshot.controller.programs[] has consistent
+      // program_type values whether the entry is the thin list shape or the inlined detail.
+      program_type:
+        p.__typename === 'StandardProgram' ? 'Standard' :
+        p.__typename === 'AdvancedProgram' ? 'Advanced' :
+        p.__typename,
       scheduling_method: p.schedulingMethod?.value ?? null,
       applies_to_zone_ids: (p.appliesToZones ?? []).map((z) => z.id),
     }));
@@ -552,30 +558,41 @@ export class HydrawiseApi {
   // Controller config — location, master valve, program mode, hibernate, expanders
 
   async updateLocation(payload: UpdateLocationPayload): Promise<LocationRead> {
-    const hasAddress = typeof payload.address === 'string';
+    // address must be a non-empty string; empty string would clear the location server-side, which we don't intend.
+    const hasAddress = typeof payload.address === 'string' && payload.address.length > 0;
     const hasCoords = typeof payload.latitude === 'number' && typeof payload.longitude === 'number';
     if (!hasAddress && !hasCoords) {
       throw new HydrawiseMutationError('updateLocation requires at least one of address, latitude+longitude');
     }
-    let result: LocationRead | null = null;
+    let addressResult: LocationRead | null = null;
     if (hasAddress) {
-      result = await this.client.mutateRaw(
+      addressResult = await this.client.mutateRaw(
         UPDATE_LOCATION_MUTATION,
         { deviceId: payload.device_id, address: payload.address },
-        (data) => data.updateLocation as LocationRead | null,
+        (data) => requireLocation('updateLocation', data.updateLocation),
       );
     }
+    let coordsResult: LocationRead | null = null;
     if (hasCoords) {
-      result = await this.client.mutateRaw(
-        UPDATE_LOCATION_COORDINATES_MUTATION,
-        { deviceId: payload.device_id, latitude: payload.latitude, longitude: payload.longitude },
-        (data) => data.updateLocationCoordinates as LocationRead | null,
-      );
+      try {
+        coordsResult = await this.client.mutateRaw(
+          UPDATE_LOCATION_COORDINATES_MUTATION,
+          { deviceId: payload.device_id, latitude: payload.latitude, longitude: payload.longitude },
+          (data) => requireLocation('updateLocationCoordinates', data.updateLocationCoordinates),
+        );
+      } catch (err) {
+        if (addressResult) {
+          // The address mutation already committed upstream — surface the partial state explicitly.
+          const cause = err instanceof Error ? err.message : String(err);
+          throw new HydrawiseMutationError(
+            `updateLocationCoordinates failed AFTER updateLocation succeeded — controller is in a partial state: address committed (id=${addressResult.id}) but coordinates were not applied. Original error: ${cause}`,
+            { cause: err instanceof Error ? err : undefined },
+          );
+        }
+        throw err;
+      }
     }
-    if (!result) {
-      throw new HydrawiseMutationError('updateLocation returned null; the operation may not have taken effect');
-    }
-    return result;
+    return coordsResult ?? addressResult!;
   }
 
   async updateControllerMasterValve(controllerId: number, zoneNumber: number): Promise<MasterValveRead> {
@@ -752,6 +769,8 @@ function requireExpander(op: string, value: unknown): { id: number; name: string
   return { id: v.id, name: v.name, number: v.number };
 }
 
+const NOTE_TYPES = ['fault', 'location', 'repair', 'comment'] as const;
+
 function requireNote(op: string, value: unknown): { id: number; note: string; type: NoteType; pinnedToTop: boolean; lastUpdatedAt: { value: string } | null } {
   if (!value || typeof value !== 'object') {
     throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
@@ -760,18 +779,38 @@ function requireNote(op: string, value: unknown): { id: number; note: string; ty
   if (typeof v.id !== 'number' || typeof v.note !== 'string' || typeof v.pinnedToTop !== 'boolean') {
     throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
   }
+  if (typeof v.type !== 'string' || !NOTE_TYPES.includes(v.type as NoteType)) {
+    throw new HydrawiseMutationError(`${op} returned unexpected note type: ${JSON.stringify(v.type)}`);
+  }
+  if (v.lastUpdatedAt != null) {
+    const lua = v.lastUpdatedAt as { value?: unknown };
+    if (typeof lua !== 'object' || typeof lua.value !== 'string') {
+      throw new HydrawiseMutationError(`${op} returned unexpected lastUpdatedAt shape`);
+    }
+  }
   return value as ReturnType<typeof requireNote>;
 }
 
+function requireLocation(op: string, value: unknown): LocationRead {
+  if (!value || typeof value !== 'object' || typeof (value as { id?: unknown }).id !== 'number') {
+    throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
+  }
+  return value as LocationRead;
+}
+
+// requireStatus throws on WARNING (in addition to ERROR / null / malformed). Used by destructive
+// mutations (delete_*_note) where WARNING typically signals "did nothing because the entity didn't
+// exist" — the AI restoring needs to distinguish that from clean success. start_zone / stop_zone
+// etc. continue to use client.mutate() which still accepts WARNING (zone-control ops legitimately
+// return WARNING for "zone is already running").
 function requireStatus(op: string, value: unknown): StatusCodeAndSummary {
   if (!value || typeof value !== 'object') {
     throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
   }
-  const v = value as { status?: unknown };
-  if (v.status !== 'OK' && v.status !== 'WARNING') {
-    throw new HydrawiseMutationError(`${op} returned non-OK status: ${JSON.stringify(value)}`);
-  }
-  return value as StatusCodeAndSummary;
+  const v = value as { status?: unknown; summary?: unknown };
+  if (v.status === 'OK') return value as StatusCodeAndSummary;
+  const summary = typeof v.summary === 'string' ? v.summary : 'no summary provided';
+  throw new HydrawiseMutationError(`${op} returned ${String(v.status)}: ${summary}`);
 }
 
 function zoneCreatePayloadToVars(p: ZoneCreatePayload): Record<string, unknown> {

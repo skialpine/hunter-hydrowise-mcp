@@ -288,4 +288,83 @@ describe('HydrawiseApi — controller-config mutations', () => {
       pinnedToTop: false,
     });
   });
+
+  it('createZoneNote throws when API returns an unknown note `type` value', async () => {
+    const harness = fakeRawClient();
+    // upstream returns a type the schema's NoteType enum doesn't include
+    harness.setNextResult({ createZoneNote: { id: 7, note: 'x', type: 'warning', pinnedToTop: false, lastUpdatedAt: null } });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.createZoneNote(2062869, { note: 'x', type: 'fault' }))
+      .rejects.toThrow(/unexpected note type/);
+  });
+
+  it('createZoneNote throws when API returns malformed lastUpdatedAt', async () => {
+    const harness = fakeRawClient();
+    harness.setNextResult({ createZoneNote: { id: 7, note: 'x', type: 'fault', pinnedToTop: false, lastUpdatedAt: { value: 12345 } } });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.createZoneNote(2062869, { note: 'x', type: 'fault' }))
+      .rejects.toThrow(/unexpected lastUpdatedAt shape/);
+  });
+
+  it('deleteZoneNote throws (not silently passes) when upstream returns WARNING', async () => {
+    const harness = fakeRawClient();
+    // WARNING typically means "the note didn't exist" — the AI restoring needs to know
+    harness.setNextResult({ deleteZoneNote: { status: 'WARNING', summary: 'Note not found' } });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.deleteZoneNote(99)).rejects.toThrow(/WARNING.*Note not found/);
+  });
+
+  it('deleteZoneNote throws on ERROR with summary', async () => {
+    const harness = fakeRawClient();
+    harness.setNextResult({ deleteZoneNote: { status: 'ERROR', summary: 'permission denied' } });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.deleteZoneNote(99)).rejects.toThrow(/ERROR.*permission denied/);
+  });
+
+  it('deleteZoneNote returns OK status as success', async () => {
+    const harness = fakeRawClient();
+    harness.setNextResult({ deleteZoneNote: { status: 'OK', summary: 'Note deleted' } });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.deleteZoneNote(99);
+    expect(out.status).toBe('OK');
+  });
+
+  it('updateLocation throws on per-call null (no silent overwrite)', async () => {
+    const harness = fakeRawClient();
+    harness.setNextResult({ updateLocation: null });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.updateLocation({ device_id: 5, address: '1 Tufts' }))
+      .rejects.toThrow(/updateLocation returned/);
+  });
+
+  it('updateLocation surfaces partial-state when coords fail after address succeeds', async () => {
+    const calls: string[] = [];
+    const client: HydrawiseClient = {
+      async query() { throw new Error('no'); },
+      async mutate() { throw new Error('no'); },
+      async mutateRaw<TResult>(
+        document: string,
+        _vars: Variables,
+        extract: (data: Record<string, unknown>) => TResult,
+      ): Promise<TResult> {
+        if (document.includes('updateLocationCoordinates')) {
+          calls.push('coords-throw');
+          throw new HydrawiseMutationError('coords mutation failed');
+        }
+        calls.push('address-ok');
+        return extract({ updateLocation: { id: 99, coordinates: null, address: '1 Tufts', country: 'US', state: 'CO', locality: 'X' } });
+      },
+    };
+    const api = new HydrawiseApi(client);
+    await expect(api.updateLocation({ device_id: 5, address: '1 Tufts', latitude: 39.6, longitude: -104.9 }))
+      .rejects.toThrow(/AFTER updateLocation succeeded/);
+    expect(calls).toEqual(['address-ok', 'coords-throw']);
+  });
+
+  it('updateLocation rejects empty-string address (would clear server-side location)', async () => {
+    const harness = fakeRawClient();
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.updateLocation({ device_id: 5, address: '' }))
+      .rejects.toThrow(/at least one of address, latitude\+longitude/);
+  });
 });

@@ -16,10 +16,11 @@ const ProgramModeEnum = z.enum(['STANDARD', 'ADVANCED'] as const);
 
 const UpdateLocationInput = {
   controller_id: z.number().int(),
-  device_id: z.number().int(),
-  address: z.string().optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+  // device_id is intentionally NOT accepted as input — looked up server-side from controller_id
+  // so the AI cannot accidentally pass a stale device_id from another controller's snapshot.
+  address: z.string().min(1).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   preview: z.boolean().optional(),
 };
 
@@ -107,25 +108,27 @@ export function registerControllerConfigTools(
   server.registerTool(
     'update_location',
     {
-      description: `${PHYSICAL} update the controller's geolocation (address, coordinates, or both). Required for Virtual Solar Sync to look up local weather. Provide \`device_id\` (from the snapshot's \`controller.device_id\` — distinct from \`controller.id\`) plus at least one of \`address\` or both of \`latitude\`/\`longitude\`. When both address and coords are provided, dispatches both upstream mutations. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} update the controller's geolocation (address, coordinates, or both). Required for Virtual Solar Sync to look up local weather. Pass \`controller_id\` plus at least one of \`address\` or both of \`latitude\`/\`longitude\`. The controller's \`device_id\` (distinct from id, required by the upstream mutations) is resolved server-side — you don't pass it. When both address and coords are provided, both upstream mutations dispatch sequentially; if the second one fails after the first commits, the partial state is surfaced explicitly. Pass \`preview: true\` to dry-run.`,
       inputSchema: UpdateLocationInput,
     },
     async (input) =>
       wrap('update_location', async () => {
-        // controller_id is collected for context (snapshot/restore plumbing) but the upstream mutations key off device_id only.
-        const { preview, controller_id: _controllerId, ...rest } = input;
-        void _controllerId;
-        const hasAddress = typeof rest.address === 'string' && rest.address.length > 0;
-        const hasCoords = typeof rest.latitude === 'number' && typeof rest.longitude === 'number';
+        const { preview, controller_id, address, latitude, longitude } = input;
+        const hasAddress = typeof address === 'string' && address.length > 0;
+        const hasCoords = typeof latitude === 'number' && typeof longitude === 'number';
         if (!hasAddress && !hasCoords) {
           throw new ConfigError('update_location requires at least one of address, latitude+longitude');
         }
-        return previewOrApply('updateLocation', rest, preview, async () => {
+        // Resolve device_id from controller — the AI never sees / supplies it, eliminating the
+        // "wrong-controller via copy-pasted device_id" failure mode.
+        const controller = await api.getController(controller_id);
+        const planned = { controller_id, device_id: controller.deviceId, address, latitude, longitude };
+        return previewOrApply('updateLocation', planned, preview, async () => {
           const result = await api.updateLocation({
-            device_id: rest.device_id,
-            address: rest.address,
-            latitude: rest.latitude,
-            longitude: rest.longitude,
+            device_id: controller.deviceId,
+            address,
+            latitude,
+            longitude,
           });
           return serializeLocation(result);
         });
@@ -135,7 +138,7 @@ export function registerControllerConfigTools(
   server.registerTool(
     'update_controller_master_valve',
     {
-      description: `${PHYSICAL} assign a controller's master valve by zone number. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} assign a controller's master valve by zone number. Pass \`zone_number: 0\` to disable the master valve entirely (sentinel for "no master valve"); any other integer designates that zone as the master valve. Pass \`preview: true\` to dry-run.`,
       inputSchema: UpdateControllerMasterValveInput,
     },
     async ({ controller_id, zone_number, preview }) =>
@@ -152,7 +155,7 @@ export function registerControllerConfigTools(
   server.registerTool(
     'update_controller_program_mode',
     {
-      description: `${PHYSICAL} switch the controller between STANDARD and ADVANCED programming modes. Mode switches discard schedule state belonging to the prior mode — use cautiously. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} switch the controller between STANDARD and ADVANCED programming modes. The two modes use different schedule data structures (Standard has shared programs with per-zone run-times; Advanced has per-zone watering programs); switching modes may invalidate or hide prior-mode schedule data — verify with \`list_programs\` after switching, and re-create the schedule for the new mode if needed. Pass \`preview: true\` to dry-run.`,
       inputSchema: UpdateControllerProgramModeInput,
     },
     async ({ controller_id, program_mode, preview }) =>
@@ -231,7 +234,7 @@ export function registerControllerConfigTools(
   server.registerTool(
     'delete_expander',
     {
-      description: `${PHYSICAL} remove a hardware expander. Zones on the expander become unaddressable. Irreversible. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} remove a hardware expander. Irreversible — the expander disappears from \`list_controllers\` / snapshot. Verify with the snapshot before relying on the deletion. Pass \`preview: true\` to dry-run.`,
       inputSchema: DeleteExpanderInput,
     },
     async ({ expander_id, preview }) =>
@@ -290,7 +293,7 @@ export function registerControllerConfigTools(
   server.registerTool(
     'delete_zone',
     {
-      description: `${PHYSICAL} delete a zone from the controller. Irreversible — the zone's run history, settings, and sensor associations are removed. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} delete a zone from the controller. Irreversible — the zone disappears from \`list_zones\`. Any sensor that referenced this zone will silently lose the association on its next read; verify with \`list_sensors\` (Phase 2) and \`list_zones\` after. Pass \`preview: true\` to dry-run.`,
       inputSchema: DeleteZoneInput,
     },
     async ({ zone_id, preview }) =>

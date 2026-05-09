@@ -184,7 +184,8 @@ function makeApp(apiOverrides: Partial<HydrawiseApi> = {}) {
     getZones: async () => [fakeZone],
     getZoneFull: async () => fakeZoneFull,
     getPrograms: async () => [
-      { id: 6390589, name: 'Lawn', program_type: 'StandardProgram', scheduling_method: 3, applies_to_zone_ids: [100] },
+      // program_type is the normalized discriminator ('Standard' | 'Advanced'), not the raw __typename.
+      { id: 6390589, name: 'Lawn', program_type: 'Standard', scheduling_method: 3, applies_to_zone_ids: [100] },
     ],
     getStandardProgram: async () => fakeStandardProgram,
     getProgramStartTimesForZone: async () => [],
@@ -283,6 +284,38 @@ describe('dump_controller_snapshot v2', () => {
     expect(program.days_run).toHaveLength(7);
     expect(program.periodicity).toMatchObject({ period: 2 });
     expect(program.per_zone_run_times).toHaveLength(1);
+  });
+
+  it('throws snapshot integrity error when getStandardProgram returns null for a Standard program in the list', async () => {
+    const app = makeApp({
+      // list_programs claims this is a Standard program, but getStandardProgram returns null —
+      // a contract violation that snapshot must surface, not silently downgrade.
+      getStandardProgram: async () => null,
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/integrity violation/i);
+  });
+
+  it('program_type discriminator is consistent between thin entries and inlined details', async () => {
+    // Two programs returned by list_programs: one Standard (will be inlined), one Advanced (stays thin).
+    // Both should report program_type using the same vocabulary ("Standard" | "Advanced") so a restore
+    // tool can key off the field uniformly without having to recognize __typename suffixes.
+    const app = makeApp({
+      getPrograms: async () => [
+        { id: 6390589, name: 'Lawn', program_type: 'Standard', scheduling_method: 3, applies_to_zone_ids: [100] },
+        { id: 6390999, name: 'Adv',  program_type: 'Advanced', scheduling_method: 3, applies_to_zone_ids: [100] },
+      ],
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: { programs: Array<Record<string, unknown>> };
+    };
+    const types = snap.controller.programs.map((p) => p.program_type);
+    expect(types).toContain('Standard');
+    expect(types).toContain('Advanced');
+    // No raw __typename leaks
+    expect(types.some((t) => typeof t === 'string' && t.endsWith('Program'))).toBe(false);
   });
 
   it('watering_triggers values include unit fields', async () => {

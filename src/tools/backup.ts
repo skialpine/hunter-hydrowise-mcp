@@ -67,9 +67,19 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
           // Inline StandardProgram details for every Standard program. ADVANCED programs are returned as the thin list entry only — Phase 3 will dispatch on programMode and add Advanced inlining.
           const standardPrograms = await Promise.all(
             programsList.map(async (p) => {
-              if (p.program_type !== 'StandardProgram') return null;
+              if (p.program_type !== 'Standard') return null;
               const full = await api.getStandardProgram(controller_id, p.id);
-              return full ? serializeStandardProgram(full) : null;
+              if (!full) {
+                // Snapshot integrity invariant: every program returned by getPrograms with
+                // program_type 'Standard' must be fetchable via getStandardProgram. A null
+                // here means upstream lied (race? renamed __typename?) — fail the snapshot
+                // rather than silently downgrade to a thin entry the AI would mistake for
+                // "this program has no schedule details."
+                throw new Error(
+                  `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
+                );
+              }
+              return serializeStandardProgram(full);
             }),
           );
 

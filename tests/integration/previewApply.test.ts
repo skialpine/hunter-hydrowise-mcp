@@ -183,9 +183,26 @@ describe('preview/apply contract', () => {
     expect(payload.operation).toBe('createSmartWateringProgram');
   });
 
-  it('update_location preview returns the planned variables and skips API', async () => {
+  it('update_location resolves device_id server-side from controller_id (preview)', async () => {
     let called = false;
     const app = makeApp({
+      // The tool now looks up device_id from getController(controller_id) — never accepts it as input.
+      getController: async () => ({
+        id: 317416,
+        deviceId: 5,
+        name: 'Test',
+        online: true,
+        softwareVersion: null,
+        programMode: 'STANDARD' as const,
+        hardware: null,
+        lastContactTime: null,
+        location: null,
+        settings: null,
+        masterZone: null,
+        expanders: null,
+        runTimeGroups: [],
+        controllerNotes: [],
+      }),
       updateLocation: async () => {
         called = true;
         return { id: 1, coordinates: null, address: '...', country: null, state: null, locality: null };
@@ -193,7 +210,6 @@ describe('preview/apply contract', () => {
     });
     const resp = await callTool(app, 'update_location', {
       controller_id: 317416,
-      device_id: 5,
       address: '1 Tufts Ln',
       latitude: 39.6,
       longitude: -104.9,
@@ -204,10 +220,11 @@ describe('preview/apply contract', () => {
     const payload = JSON.parse(resp.result!.content[0]!.text) as {
       preview: boolean;
       operation: string;
-      variables: { device_id: number; address: string; latitude: number; longitude: number };
+      variables: { controller_id: number; device_id: number; address: string; latitude: number; longitude: number };
     };
     expect(payload.operation).toBe('updateLocation');
-    expect(payload.variables.device_id).toBe(5);
+    expect(payload.variables.controller_id).toBe(317416);
+    expect(payload.variables.device_id).toBe(5); // server-resolved, not passed in by caller
     expect(payload.variables.address).toBe('1 Tufts Ln');
     expect(payload.variables.latitude).toBe(39.6);
     expect(payload.variables.longitude).toBe(-104.9);
@@ -217,7 +234,6 @@ describe('preview/apply contract', () => {
     const app = makeApp();
     const resp = await callTool(app, 'update_location', {
       controller_id: 317416,
-      device_id: 5,
       preview: true,
     });
     expect(resp.result?.isError).toBe(true);

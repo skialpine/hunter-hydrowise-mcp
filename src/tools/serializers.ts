@@ -16,9 +16,11 @@ import type {
   Zone,
   ZoneNoteRead,
   ZoneRichRead,
+  ZoneWritable,
 } from '../hydrawise/queries.js';
 
 // Listed in the snapshot's per-zone _unreadable_fields block. These are accepted by updateZoneAdvanced but not surfaced by any read query — the AI restoring must supply them from another source.
+// Constrained to `keyof ZoneWritable` so adding/renaming a writable field forces a compile error here.
 const ZONE_UNREADABLE_FIELDS = [
   'watering_mode',
   'global_master_valve',
@@ -39,7 +41,11 @@ const ZONE_UNREADABLE_FIELDS = [
   'current_monitoring_method',
   'flow_monitoring_value',
   'current_monitoring_value',
-] as const;
+] as const satisfies readonly (keyof ZoneWritable)[];
+
+function nonNull<T>(arr: (T | null)[] | null | undefined): T[] {
+  return (arr ?? []).filter((x): x is T => x != null);
+}
 
 export function serializeUser(user: User): Record<string, unknown> {
   return {
@@ -72,10 +78,10 @@ export function serializeController(controller: Controller): Record<string, unkn
     time_zone: controller.settings?.timeZone ? serializeTimeZone(controller.settings.timeZone) : null,
     inter_zone_delay: controller.settings?.zones?.interZoneDelay ?? null,
     master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
-    expanders: (controller.expanders ?? []).map(serializeExpander),
-    modules: (controller.hardware?.modules ?? []).map(serializeModule),
+    expanders: nonNull(controller.expanders).map(serializeExpander),
+    modules: nonNull(controller.hardware?.modules).map(serializeModule),
     run_time_groups: controller.runTimeGroups.map(serializeRunTimeGroup),
-    controller_notes: controller.controllerNotes.map(serializeNote),
+    controller_notes: nonNull(controller.controllerNotes).map(serializeNote),
   };
 }
 
@@ -109,7 +115,7 @@ export function serializeExpander(e: ExpanderRead): Record<string, unknown> {
     name: e.name,
     number: e.number,
     model_id: e.hardware.model.id,
-    firmware: (e.hardware.firmware ?? []).map((f) => ({
+    firmware: nonNull(e.hardware.firmware).map((f) => ({
       type: f.type,
       version: f.version,
       bank: f.bank,
@@ -119,7 +125,9 @@ export function serializeExpander(e: ExpanderRead): Record<string, unknown> {
 
 export function serializeModule(m: ModuleRead): Record<string, unknown> {
   return {
-    id: m.id,
+    // Long! scalar from upstream is delivered as a JS Number by graphql-request; coerce to string
+    // so the snapshot survives the JS Int53 boundary if a future module id ever exceeds 2^53.
+    id: String(m.id),
     name: m.name,
     serial_number: m.serialNumber,
     module_type: m.moduleType,
@@ -185,7 +193,7 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
           },
         }
       : null,
-    zone_notes: (zone.zoneNotes ?? []).map(serializeNote),
+    zone_notes: nonNull(zone.zoneNotes).map(serializeNote),
     // Read schema doesn't expose these; caller must supply on update.
     watering_mode: null,
     global_master_valve: null,

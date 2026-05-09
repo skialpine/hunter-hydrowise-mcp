@@ -17,15 +17,18 @@ export interface Controller {
     status: string | null;
     installationTime: { value: string } | null;
     model: { id: string; name: string; family: { name?: string | null } | null } | null;
-    modules: ModuleRead[] | null;
+    // Schema: `modules: [Module]` — list members may be null.
+    modules: (ModuleRead | null)[] | null;
   } | null;
   lastContactTime: { value: string } | null;
   location: LocationRead | null;
   settings: ControllerSettingsRead | null;
   masterZone: MasterValveRead | null;
-  expanders: ExpanderRead[] | null;
+  // Schema: `expanders: [Expander]` — list members may be null.
+  expanders: (ExpanderRead | null)[] | null;
   runTimeGroups: RunTimeGroupRead[];
-  controllerNotes: ControllerNoteRead[];
+  // Schema: `controllerNotes: [ControllerNote]!` — non-null list, members may be null.
+  controllerNotes: (ControllerNoteRead | null)[];
 }
 
 export interface GeoCoordinatesRead {
@@ -67,7 +70,8 @@ export interface ExpanderRead {
   number: number;
   hardware: {
     model: { id: string };
-    firmware: { type: string; version: number | null; bank: number | null }[] | null;
+    // Schema: `firmware: [ExpanderFirmware]` — list members may be null.
+    firmware: ({ type: string; version: number | null; bank: number | null } | null)[] | null;
   };
 }
 
@@ -545,7 +549,8 @@ export interface ZoneRichRead {
   status: {
     suspendedUntil: { value: string } | null;
   };
-  zoneNotes: ZoneNoteRead[];
+  // Schema: `zoneNotes: [ZoneNote]!` — non-null list, members may be null.
+  zoneNotes: (ZoneNoteRead | null)[];
 }
 
 export interface LocalizedValue {
@@ -803,8 +808,8 @@ export interface StandardProgramRead {
   daysRun: string[];
   standardProgramDayPattern: string | null;
   periodicity: { period: number; seriesStart: { value: string } | null } | null;
-  // The schema's `timeRange: Unit!` field — Unit { validFrom, validTo } in Int seconds-since-epoch (or null = unbounded).
-  timeRange: { validFrom: number | null; validTo: number | null } | null;
+  // The schema's `timeRange: Unit!` is non-null at the wrapper; only the inner validFrom/validTo are nullable (null = unbounded on that side). Keep the wrapper non-null to match.
+  timeRange: { validFrom: number | null; validTo: number | null };
   conditionalWateringAdjustments: { id: number; label: string }[];
   applications: {
     zone: { id: number; number: { value: number } };

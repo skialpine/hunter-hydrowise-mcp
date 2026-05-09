@@ -105,6 +105,11 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 
 ### Backup — `src/tools/backup.ts` (read-only)
 - `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 2`). Captures: user; controller header (id, **device_id**, model, hardware, **location**, **time_zone**, **master_valve**, **expanders**, **modules**, **run_time_groups** catalog, **controller_notes**); zones with their writable settings (cycle/soak, monitoring observed values **with units preserved**, **master_valve_override**, **zone_notes**, plus a `_unreadable_fields` array listing writable-but-not-readable field names); programs (Standard programs are **inlined with full schedule detail** — start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments); program start times per zone (empty for STANDARD-mode controllers); seasonal adjustments; watering triggers (with units captured per LocalizedValueType field). No telemetry or run-event history.
+  - **NOT yet covered (deferred to later phases):**
+    - **Sensors** (`Controller.sensors`, per-zone `Zone.sensors`) — Phase 2 (`add-irrigation-sensors`)
+    - **ADVANCED-mode schedule detail** — Phase 3 (`add-advanced-mode-support`). For ADVANCED-mode controllers, `controller.programs[]` carries id/name/zone-IDs only; the per-zone `advancedProgram` reference and the WateringProgram subtype config are not yet inlined. STANDARD-mode controllers (the default for most accounts) are fully covered.
+    - **Restore recipe / caveats** — Phase 4 (`add-restore-guidance`). The snapshot is currently restoration-data only; the AI orchestrating restore today reasons about ordering and conflicts unaided.
+  - On a STANDARD-mode controller without sensors, the snapshot IS restore-complete via the existing `update_*` / `create_*` / `delete_*` tools.
 
 ### Controller config — `src/tools/controllerConfig.ts` (PHYSICAL ACTION writes)
 - `update_location` — set address and/or coordinates; needs `device_id` (distinct from `controller.id`, captured in the snapshot)
