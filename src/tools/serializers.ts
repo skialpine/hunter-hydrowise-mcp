@@ -47,6 +47,10 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     number: zone.number.value,
     icon: zone.icon?.id ?? null,
     watering_adjustment: zone.wateringSettings?.fixedWateringAdjustment ?? null,
+    // Hydrawise's read schema doesn't expose `cycleSoakEnable` directly — the
+    // mutation accepts it as `Int`, but on read we infer enabled (1) vs
+    // disabled (0) from whether `cycleAndSoakSettings` is present on the zone.
+    cycle_soak_enable: zone.wateringSettings?.cycleAndSoakSettings ? 1 : 0,
     cycle_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.cycleDuration ?? null,
     soak_custom_time: zone.wateringSettings?.cycleAndSoakSettings?.soakDuration ?? null,
     // Fields not directly present on the read shape; the AI must supply these
@@ -62,7 +66,6 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     virtual_solar_sync_watering_frequency: null,
     run_next_available_start_time: null,
     pre_configured_watering_schedule_id: null,
-    cycle_soak_enable: null,
     factors: null,
     sensor_ids: null,
     reusable_schedule: null,
