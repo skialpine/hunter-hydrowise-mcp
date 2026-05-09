@@ -44,8 +44,8 @@ A single `app.all('/mcp', ...)` route delegates `POST`/`GET`/`DELETE` to `transp
 - We do *not* implement OAuth 2.1 / OIDC discovery in v1; the spec's auth chapter is forward-compatible, so adding it later does not break existing clients.
 
 ### Session management
-- One process-wide `McpServer` instance registers all tools.
-- A `Map<sessionId, StreamableHTTPServerTransport>` holds active sessions. On `initialize` (no `MCP-Session-Id` header, body is an `InitializeRequest`), we create a new transport, wire `transport.onclose` to delete the entry, and `await server.connect(transport)`.
+- Each new session gets its **own** `McpServer` instance (the SDK's `Server.connect` enforces one transport per server, so a process-wide singleton would throw on the second `initialize`). The shared `HydrawiseApi` is captured by closure and reused across sessions, so per-session server creation is just tool-registration overhead — cheap.
+- A `Map<sessionId, StreamableHTTPServerTransport>` holds active sessions. On `initialize` (no `MCP-Session-Id` header, body is an `InitializeRequest`), we create a new transport, mint a new `McpServer` via the factory, wire `transport.onclose` to delete the entry, and `await server.connect(transport)`. The captured `McpServer` reference is released when the transport closes so GC can reclaim it.
 - Requests with an unknown `MCP-Session-Id` get HTTP 404, prompting the client to re-initialize, per spec §Session Management.
 - `DELETE /mcp` with a valid `MCP-Session-Id` closes that transport and removes the entry.
 - Sessions expire after `HYDRAWISE_MCP_SESSION_TTL` (default 1 hour) of inactivity to bound memory.

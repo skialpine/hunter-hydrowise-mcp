@@ -34,8 +34,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
 
 function makeApp(cfg: Config = makeConfig()) {
   const api = new HydrawiseApi(fakeClient());
-  const server = buildMcpServer(api);
-  return buildApp(cfg, server, createLogger('error'));
+  return buildApp(cfg, () => buildMcpServer(api), createLogger('error'));
 }
 
 const INITIALIZE_BODY = {

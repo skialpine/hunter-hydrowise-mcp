@@ -40,7 +40,7 @@
 
 ## 5. MCP server bootstrap & tool registration
 
-- [x] 5.1 In `src/server.ts`, instantiate one process-wide `McpServer({ name: "hydrowise-mcp", version })` from `@modelcontextprotocol/sdk/server/mcp.js` (the SDK negotiates protocol 2025-11-25 automatically since `LATEST_PROTOCOL_VERSION` is hard-coded in 1.29.0)
+- [x] 5.1 In `src/server.ts`, expose a `buildMcpServer(api)` factory that returns a fresh `McpServer({ name: "hydrowise-mcp", version })` per session (SDK requires one transport per server) — the SDK negotiates protocol 2025-11-25 automatically since `LATEST_PROTOCOL_VERSION` is hard-coded in 1.29.0
 - [x] 5.2 Register all status tools (Section 6) and control tools (Section 7) on the single `McpServer` instance
 - [x] 5.3 Build the Express app: JSON body parser, `originGuard`, `hostGuard`, `bearerGuard`, then a single `app.all('/mcp', handler)` route
 - [x] 5.4 The handler routes by method:

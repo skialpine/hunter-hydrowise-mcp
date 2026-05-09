@@ -29,7 +29,11 @@ export function buildMcpServer(api: HydrawiseApi): McpServer {
   return server;
 }
 
-export function buildApp(cfg: Config, server: McpServer, logger: Logger): express.Express {
+export function buildApp(
+  cfg: Config,
+  serverFactory: () => McpServer,
+  logger: Logger,
+): express.Express {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   app.use(originGuard(cfg.allowedOrigins));
@@ -75,13 +79,16 @@ export function buildApp(cfg: Config, server: McpServer, logger: Logger): expres
           logger.info('mcp session initialized', { sessionId: sid });
         },
       });
+      const sessionServer = serverFactory();
       transport.onclose = () => {
         if (transport.sessionId) {
           sessions.delete(transport.sessionId);
           logger.info('mcp session closed', { sessionId: transport.sessionId });
         }
+        // sessionServer is captured by this closure; releasing it here lets
+        // GC reclaim the McpServer once the transport is fully unwound.
       };
-      await server.connect(transport);
+      await sessionServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
       return;
     }
@@ -132,8 +139,7 @@ export async function main(): Promise<void> {
   const logger = createLogger(cfg.logLevel);
   const auth = new Auth(cfg.username, cfg.password);
   const api = new HydrawiseApi(getClient(auth));
-  const server = buildMcpServer(api);
-  const app = buildApp(cfg, server, logger);
+  const app = buildApp(cfg, () => buildMcpServer(api), logger);
 
   const httpServer = app.listen(cfg.port, cfg.host, () => {
     process.stderr.write(
