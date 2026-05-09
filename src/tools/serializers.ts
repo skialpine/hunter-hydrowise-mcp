@@ -1,14 +1,45 @@
 import type {
   Controller,
+  ControllerNoteRead,
+  ExpanderRead,
+  LocationRead,
+  MasterValveRead,
+  ModuleRead,
   ProgramStartTimeRead,
   RunEventType,
   RunSummaryDetails,
+  RunTimeGroupRead,
   ScheduledZoneRun,
+  TimeZoneRead,
   User,
   WateringTriggersRead,
   Zone,
+  ZoneNoteRead,
   ZoneRichRead,
 } from '../hydrawise/queries.js';
+
+// Listed in the snapshot's per-zone _unreadable_fields block. These are accepted by updateZoneAdvanced but not surfaced by any read query — the AI restoring must supply them from another source.
+const ZONE_UNREADABLE_FIELDS = [
+  'watering_mode',
+  'global_master_valve',
+  'schedule_adjustment_ids',
+  'watering_type',
+  'run_time',
+  'watering_frequency_mode',
+  'fixed_watering_frequency',
+  'smart_watering_frequency',
+  'virtual_solar_sync_watering_frequency',
+  'run_next_available_start_time',
+  'pre_configured_watering_schedule_id',
+  'factors',
+  'sensor_ids',
+  'reusable_schedule',
+  'reusable_schedule_name',
+  'flow_monitoring_method',
+  'current_monitoring_method',
+  'flow_monitoring_value',
+  'current_monitoring_value',
+] as const;
 
 export function serializeUser(user: User): Record<string, unknown> {
   return {
@@ -21,6 +52,7 @@ export function serializeUser(user: User): Record<string, unknown> {
 export function serializeController(controller: Controller): Record<string, unknown> {
   return {
     id: controller.id,
+    device_id: controller.deviceId,
     name: controller.name,
     online: controller.online,
     serial_number: controller.hardware?.serialNumber ?? null,
@@ -36,6 +68,80 @@ export function serializeController(controller: Controller): Record<string, unkn
           family: controller.hardware.model.family?.name ?? null,
         }
       : null,
+    location: controller.location ? serializeLocation(controller.location) : null,
+    time_zone: controller.settings?.timeZone ? serializeTimeZone(controller.settings.timeZone) : null,
+    inter_zone_delay: controller.settings?.zones?.interZoneDelay ?? null,
+    master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
+    expanders: (controller.expanders ?? []).map(serializeExpander),
+    modules: (controller.hardware?.modules ?? []).map(serializeModule),
+    run_time_groups: controller.runTimeGroups.map(serializeRunTimeGroup),
+    controller_notes: controller.controllerNotes.map(serializeNote),
+  };
+}
+
+export function serializeLocation(loc: LocationRead): Record<string, unknown> {
+  return {
+    id: loc.id,
+    latitude: loc.coordinates?.latitude ?? null,
+    longitude: loc.coordinates?.longitude ?? null,
+    address: loc.address,
+    country: loc.country,
+    state: loc.state,
+    locality: loc.locality,
+  };
+}
+
+export function serializeTimeZone(tz: TimeZoneRead): Record<string, unknown> {
+  return { name: tz.name, offset: tz.offset };
+}
+
+export function serializeMasterValve(mv: MasterValveRead): Record<string, unknown> {
+  return {
+    zone_number: mv.zoneNumber?.value ?? null,
+    delay: mv.delay,
+    post_timer: mv.postTimer,
+  };
+}
+
+export function serializeExpander(e: ExpanderRead): Record<string, unknown> {
+  return {
+    id: e.id,
+    name: e.name,
+    number: e.number,
+    model_id: e.hardware.model.id,
+    firmware: (e.hardware.firmware ?? []).map((f) => ({
+      type: f.type,
+      version: f.version,
+      bank: f.bank,
+    })),
+  };
+}
+
+export function serializeModule(m: ModuleRead): Record<string, unknown> {
+  return {
+    id: m.id,
+    name: m.name,
+    serial_number: m.serialNumber,
+    module_type: m.moduleType,
+    firmware_version: m.firmwareVersion,
+  };
+}
+
+export function serializeRunTimeGroup(g: RunTimeGroupRead): Record<string, unknown> {
+  return {
+    id: g.id,
+    name: g.name,
+    duration_minutes: g.duration,
+  };
+}
+
+export function serializeNote(n: ControllerNoteRead | ZoneNoteRead): Record<string, unknown> {
+  return {
+    id: n.id,
+    note: n.note,
+    type: n.type,
+    pinned_to_top: n.pinnedToTop,
+    last_updated_at: n.lastUpdatedAt?.value ?? null,
   };
 }
 
@@ -55,6 +161,8 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     name: zone.name,
     number: zone.number.value,
     icon: zone.icon?.id ?? null,
+    // -1 = global, 0 = always disabled, else specific zone number.
+    master_valve_override: zone.masterValve,
     watering_adjustment: ws?.fixedWateringAdjustment ?? null,
     // cycle_soak_enable isn't exposed in reads — infer from cycleAndSoakSettings presence; null when wateringSettings is missing entirely.
     cycle_soak_enable: ws ? ws.cycleAndSoakSettings != null : null,
@@ -68,17 +176,16 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     monitoring_observed: zone.monitoringSettings
       ? {
           operating_ranges: {
-            water_flow_rate: zone.monitoringSettings.operatingRanges?.waterFlowRate?.value ?? null,
-            electric_current:
-              zone.monitoringSettings.operatingRanges?.electricCurrent?.value ?? null,
+            water_flow_rate: serializeUnitValue(zone.monitoringSettings.operatingRanges?.waterFlowRate),
+            electric_current: serializeUnitValue(zone.monitoringSettings.operatingRanges?.electricCurrent),
           },
           measured_medians: {
-            water_flow_rate: zone.monitoringSettings.measuredMedians?.waterFlowRate?.value ?? null,
-            electric_current:
-              zone.monitoringSettings.measuredMedians?.electricCurrent?.value ?? null,
+            water_flow_rate: serializeUnitValue(zone.monitoringSettings.measuredMedians?.waterFlowRate),
+            electric_current: serializeUnitValue(zone.monitoringSettings.measuredMedians?.electricCurrent),
           },
         }
       : null,
+    zone_notes: (zone.zoneNotes ?? []).map(serializeNote),
     // Read schema doesn't expose these; caller must supply on update.
     watering_mode: null,
     global_master_valve: null,
@@ -95,31 +202,40 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     sensor_ids: null,
     reusable_schedule: null,
     reusable_schedule_name: null,
+    _unreadable_fields: [...ZONE_UNREADABLE_FIELDS],
   };
+}
+
+// LocalizedValueType → { value, unit } object so the snapshot can detect unit-pref drift between capture and restore.
+function serializeUnitValue(
+  v: { value: number | null; unit: string | null } | null | undefined,
+): { value: number | null; unit: string | null } | null {
+  if (v == null) return null;
+  return { value: v.value ?? null, unit: v.unit ?? null };
 }
 
 export function serializeWateringTriggers(t: WateringTriggersRead): Record<string, unknown> {
   return {
-    extend_water_temperature: t.extendWaterTemperature?.value ?? null,
+    extend_water_temperature: serializeUnitValue(t.extendWaterTemperature),
     extend_water_temperature_enabled: t.extendWaterTemperatureEnabled,
     extend_water_temperature_percentage: t.extendWaterTemperaturePercentage,
     extend_water_humidity: t.extendWaterHumidity,
     extend_water_humidity_enabled: t.extendWaterHumidityEnabled,
-    suspend_water_week_rain: t.suspendWaterWeekRain?.value ?? null,
+    suspend_water_week_rain: serializeUnitValue(t.suspendWaterWeekRain),
     suspend_water_rain_days: t.suspendWaterRainDays,
     suspend_water_week_rain_enabled: t.suspendWaterWeekRainEnabled,
-    suspend_water_rain: t.suspendWaterRain?.value ?? null,
+    suspend_water_rain: serializeUnitValue(t.suspendWaterRain),
     suspend_water_rain_enabled: t.suspendWaterRainEnabled,
-    suspend_water_temperature: t.suspendWaterTemperature?.value ?? null,
+    suspend_water_temperature: serializeUnitValue(t.suspendWaterTemperature),
     suspend_water_temperature_enabled: t.suspendWaterTemperatureEnabled,
     suspend_probability_of_precipitation: t.suspendProbabilityOfPrecipitation,
     suspend_probability_of_precipitation_enabled: t.suspendProbabilityOfPrecipitationEnabled,
-    suspend_wind: t.suspendWind?.value ?? null,
+    suspend_wind: serializeUnitValue(t.suspendWind),
     suspend_wind_enabled: t.suspendWindEnabled,
     enable_evapotranspiration_forecast_temperature: t.enableEvapotranspirationForecastTemperature,
     enable_evapotranspiration_forecast_rain: t.enableEvapotranspirationForecastRain,
     reduce_water_temperature_enabled: t.reduceWaterTemperatureEnabled,
-    reduce_water_temperature: t.reduceWaterTemperature?.value ?? null,
+    reduce_water_temperature: serializeUnitValue(t.reduceWaterTemperature),
     reduce_water_temperature_percentage: t.reduceWaterTemperaturePercentage,
   };
 }
@@ -198,7 +314,44 @@ export function serializeProgramStartTime(p: ProgramStartTimeRead): Record<strin
     id: p.id,
     type_value: p.type?.value ?? null,
     time: timeString,
+    watering_days: p.wateringDays ?? null,
     apply_all: p.application?.all ?? null,
     zone_ids: (p.application?.zones ?? []).map((z) => z.id),
+  };
+}
+
+export function serializeStandardProgram(p: import('../hydrawise/queries.js').StandardProgramRead): Record<string, unknown> {
+  return {
+    id: p.id,
+    name: p.name,
+    program_type: 'Standard',
+    standard_program_day_pattern: p.standardProgramDayPattern,
+    days_run: p.daysRun,
+    start_times: p.startTimes,
+    ignore_rain_sensor: p.ignoreRainSensor,
+    monthly_watering_adjustments: p.monthlyWateringAdjustments,
+    scheduling_method: p.schedulingMethod,
+    periodicity: p.periodicity
+      ? {
+          period: p.periodicity.period,
+          series_start: p.periodicity.seriesStart?.value ?? null,
+        }
+      : null,
+    valid_from: p.timeRange?.validFrom ?? null,
+    valid_to: p.timeRange?.validTo ?? null,
+    schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
+    applies_to_zones: p.appliesToZones.map((z) => ({
+      id: z.id,
+      number: z.number.value,
+      name: z.name,
+    })),
+    // RunTimeGroup.duration is minutes; startZone's customRunDuration is seconds — don't conflate.
+    per_zone_run_times: p.applications.map((a) => ({
+      zone_id: a.zone.id,
+      zone_number: a.zone.number.value,
+      run_time_group_id: a.runTimeGroup.id,
+      run_time_group_name: a.runTimeGroup.name,
+      duration_minutes: a.runTimeGroup.duration,
+    })),
   };
 }

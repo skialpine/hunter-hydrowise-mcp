@@ -104,7 +104,21 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 - `create_watering_program`, `update_watering_program`, `delete_watering_program`
 
 ### Backup — `src/tools/backup.ts` (read-only)
-- `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 1`) covering user, controller, zones with settings, programs, start times, seasonal adjustments, and watering triggers; no telemetry or run-event history
+- `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 2`). Captures: user; controller header (id, **device_id**, model, hardware, **location**, **time_zone**, **master_valve**, **expanders**, **modules**, **run_time_groups** catalog, **controller_notes**); zones with their writable settings (cycle/soak, monitoring observed values **with units preserved**, **master_valve_override**, **zone_notes**, plus a `_unreadable_fields` array listing writable-but-not-readable field names); programs (Standard programs are **inlined with full schedule detail** — start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments); program start times per zone (empty for STANDARD-mode controllers); seasonal adjustments; watering triggers (with units captured per LocalizedValueType field). No telemetry or run-event history.
+
+### Controller config — `src/tools/controllerConfig.ts` (PHYSICAL ACTION writes)
+- `update_location` — set address and/or coordinates; needs `device_id` (distinct from `controller.id`, captured in the snapshot)
+- `update_controller_master_valve` — assign master valve by zone number
+- `update_controller_program_mode` — switch STANDARD ↔ ADVANCED (discards prior-mode schedule state)
+- `hibernate_controller`, `wake_controller`
+- `create_expander`, `update_expander`, `delete_expander`
+- `create_zone`, `delete_zone` — wraps `createZoneAdvanced` / `deleteZone`. The deprecated `createZone` (Int cycleSoakEnable / runNextAvailableStartTime) is intentionally not wrapped.
+
+### Notes — `src/tools/notes.ts` (reads + PHYSICAL ACTION writes)
+- `list_controller_notes`, `list_zone_notes`
+- `create_controller_note`, `update_controller_note`, `delete_controller_note`
+- `create_zone_note`, `update_zone_note`, `delete_zone_note`
+- All notes are typed (`fault | location | repair | comment`) with optional `pinned_to_top` flag.
 
 ### Reporting — `src/tools/reporting.ts` (read-only)
 - `get_watering_report` — controller-level run log for a date range (`from`/`until` as ISO-8601 strings → Unix timestamps); returns scheduled vs. reported times, durations in seconds, water usage, stop reason per run event
@@ -169,7 +183,12 @@ These bit us during real-account testing and aren't obvious from the schema alon
   - `ScheduledZoneRun.duration` is **scheduled** minutes — what the controller was told to run, NOT what actually elapsed. `serializeScheduledZoneRun` exposes this as `scheduled_duration_minutes` and adds `actual_elapsed_seconds` (computed from `endTime - startTime`) so cancelled / short-stopped runs are visible.
   - When in doubt, check what the GUI shows for the same field and confirm.
 - **Read shapes don't match write shapes.** Reads return `SelectedOption { value, label, options }` and `LocalizedValueType { value, unit }` wrappers; mutations take bare `Int`/`Float`. The `tools/serializers.ts` layer unwraps on read; the AI is expected to send unwrapped values on write. **Don't try to round-trip** a raw read result into a mutation — it won't validate.
+- **Snapshot preserves the `unit` string from every LocalizedValueType field**, but mutations take bare numbers. The unit goes into the snapshot envelope so the restore workflow can detect a unit-pref change between capture and restore (97°F captured → 97 restored as °C = scorched lawn). When calling `update_watering_triggers` / `update_zone_settings` from a snapshot, the AI extracts the bare `value` from the `{value, unit}` object and supplies it as a Float; the unit never reaches the mutation.
 - **`MonitoringMethodEnum`** has exactly two values: `MANUAL` (use the supplied baseline) and `LEARN_FROM_NEXT_RUN` (observe and remember on the next zone run). The matching `*MonitoringValue` fields are only meaningful when the method is `MANUAL`.
+- **`Controller.deviceId` ≠ `Controller.id`.** The location mutations (`updateLocation`, `updateLocationCoordinates`) take `deviceId`, not `controllerId`. Restore must use `device_id` from the snapshot.
+- **`Module.id` is `Long!` (a custom scalar), not Int.** Serialized as a string in the snapshot to avoid JS Int53 surprises.
+- **No standalone CRUD for `RunTimeGroup`.** The schema doesn't expose `createRunTimeGroup` / `updateRunTimeGroup`. Run-time groups are created/updated implicitly via `createStandardProgram` / `updateStandardProgram` through their `zoneRunTimes[]` argument. The snapshot's `controller.run_time_groups` catalog is captured for inspection / cross-reference, not for direct mutation.
+- **No standalone CRUD for reusable schedule adjustments.** The `schedule_adjustment_ids` field references account-managed records that have no exposed mutations. Snapshot captures the IDs in use; if a snapshot's referenced ID has been removed from the account between capture and restore, the restore will fail at the `update_zone_settings` call. Document as `_caveat` and reconcile manually.
 - **The pydrawise cached schema at `/tmp/hydrawise.graphql` is outdated.** The live SDL at `schema/hydrawise.live.graphql` is the source of truth; the cached one is missing newer features (`updateZoneAdvanced`, `setBaselineValues`, `learn*FromNextRun` start args, controller notes, ownership transfer, issue muting, etc.). When you suspect the cached schema, run `scripts/probe-schema.ts` to compare.
 - **`DateTime` is an object type, not a scalar.** It has `{ value: String!, timestamp: Int!, largeTimestamp: Float!, timeZone: TimeZone!, relativeTime: String! }`. Any field typed `DateTime` or `DateTime!` in the schema **requires a sub-selection** (e.g. `startTime { value }`). Omitting it gives "Field X of type DateTime must have a sub selection." All reporting timestamp fields (`startTime`, `endTime`, `normalStartTime`, `reportedStartTime`, etc.) are `DateTime` objects — select `{ value }` and unwrap in the serializer.
 - **The OAuth `client_secret` (`zn3CrjglwNV1`)** is the public bundled secret of the Hydrawise mobile app — not a credential we own. Fine to commit.

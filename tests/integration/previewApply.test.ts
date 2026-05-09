@@ -182,4 +182,150 @@ describe('preview/apply contract', () => {
     };
     expect(payload.operation).toBe('createSmartWateringProgram');
   });
+
+  it('update_location preview returns the planned variables and skips API', async () => {
+    let called = false;
+    const app = makeApp({
+      updateLocation: async () => {
+        called = true;
+        return { id: 1, coordinates: null, address: '...', country: null, state: null, locality: null };
+      },
+    });
+    const resp = await callTool(app, 'update_location', {
+      controller_id: 317416,
+      device_id: 5,
+      address: '1 Tufts Ln',
+      latitude: 39.6,
+      longitude: -104.9,
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean;
+      operation: string;
+      variables: { device_id: number; address: string; latitude: number; longitude: number };
+    };
+    expect(payload.operation).toBe('updateLocation');
+    expect(payload.variables.device_id).toBe(5);
+    expect(payload.variables.address).toBe('1 Tufts Ln');
+    expect(payload.variables.latitude).toBe(39.6);
+    expect(payload.variables.longitude).toBe(-104.9);
+  });
+
+  it('update_location with no fields returns config_error', async () => {
+    const app = makeApp();
+    const resp = await callTool(app, 'update_location', {
+      controller_id: 317416,
+      device_id: 5,
+      preview: true,
+    });
+    expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/config_error/);
+  });
+
+  it('update_controller_program_mode preview shows the planned mode', async () => {
+    let called = false;
+    const app = makeApp({
+      updateControllerProgramMode: async () => {
+        called = true;
+        return { id: 317416, programMode: 'ADVANCED' };
+      },
+    });
+    const resp = await callTool(app, 'update_controller_program_mode', {
+      controller_id: 317416,
+      program_mode: 'ADVANCED',
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      operation: string;
+      variables: { controller_id: number; program_mode: string };
+    };
+    expect(payload.operation).toBe('updateControllerProgramMode');
+    expect(payload.variables.program_mode).toBe('ADVANCED');
+  });
+
+  it('create_zone_note preview shows the planned note', async () => {
+    let called = false;
+    const app = makeApp({
+      createZoneNote: async () => {
+        called = true;
+        return {
+          id: 1,
+          note: 'cracked head',
+          type: 'fault',
+          pinnedToTop: false,
+          lastUpdatedAt: null,
+        };
+      },
+    });
+    const resp = await callTool(app, 'create_zone_note', {
+      zone_id: 2062869,
+      note: 'cracked head',
+      type: 'fault',
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      operation: string;
+      variables: { zone_id: number; note: string; type: string };
+    };
+    expect(payload.operation).toBe('createZoneNote');
+    expect(payload.variables.zone_id).toBe(2062869);
+    expect(payload.variables.note).toBe('cracked head');
+    expect(payload.variables.type).toBe('fault');
+  });
+
+  it('create_zone preview shows the full payload', async () => {
+    let called = false;
+    const app = makeApp({
+      createZoneAdvanced: async () => {
+        called = true;
+        return { id: 9999, name: 'New Zone', number: { value: 25 } };
+      },
+    });
+    const resp = await callTool(app, 'create_zone', {
+      controller_id: 317416,
+      name: 'New Zone',
+      number: 25,
+      watering_mode: 1,
+      global_master_valve: 1,
+      schedule_adjustment_ids: [],
+      watering_adjustment: 100,
+      watering_type: 1,
+      watering_frequency_mode: 1,
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      operation: string;
+      variables: { controller_id: number; name: string; number: number };
+    };
+    expect(payload.operation).toBe('createZoneAdvanced');
+    expect(payload.variables.name).toBe('New Zone');
+    expect(payload.variables.number).toBe(25);
+  });
+
+  it('delete_zone preview shows just the zone_id', async () => {
+    let called = false;
+    const app = makeApp({
+      deleteZone: async () => {
+        called = true;
+        return true as const;
+      },
+    });
+    const resp = await callTool(app, 'delete_zone', { zone_id: 9999, preview: true });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      operation: string;
+      variables: { zone_id: number };
+    };
+    expect(payload.operation).toBe('deleteZone');
+    expect(payload.variables.zone_id).toBe(9999);
+  });
 });

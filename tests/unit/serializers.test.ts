@@ -1,27 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import type { ZoneRichRead } from '../../src/hydrawise/queries.js';
-import { serializeZoneSettings } from '../../src/tools/serializers.js';
+import type {
+  ControllerNoteRead,
+  ExpanderRead,
+  LocationRead,
+  RunTimeGroupRead,
+  StandardProgramRead,
+  TimeZoneRead,
+  WateringTriggersRead,
+  ZoneRichRead,
+} from '../../src/hydrawise/queries.js';
+import {
+  serializeExpander,
+  serializeLocation,
+  serializeNote,
+  serializeRunTimeGroup,
+  serializeStandardProgram,
+  serializeTimeZone,
+  serializeWateringTriggers,
+  serializeZoneSettings,
+} from '../../src/tools/serializers.js';
 
 const baseZone: ZoneRichRead = {
   id: 42,
   name: 'Front Drip',
   number: { value: 13 },
   icon: { id: 4 },
+  masterValve: -1,
   wateringSettings: {
     fixedWateringAdjustment: 100,
     cycleAndSoakSettings: { cycleDuration: 10, soakDuration: 30 },
   },
   monitoringSettings: {
     operatingRanges: {
-      waterFlowRate: { value: 1.2 },
-      electricCurrent: { value: 380 },
+      waterFlowRate: { value: 1.2, unit: 'gpm' },
+      electricCurrent: { value: 380, unit: 'mA' },
     },
     measuredMedians: {
-      waterFlowRate: { value: 1.18 },
-      electricCurrent: { value: 402 },
+      waterFlowRate: { value: 1.18, unit: 'gpm' },
+      electricCurrent: { value: 402, unit: 'mA' },
     },
   },
   status: { suspendedUntil: null },
+  zoneNotes: [],
 };
 
 describe('serializeZoneSettings', () => {
@@ -40,11 +60,17 @@ describe('serializeZoneSettings', () => {
     expect(out.cycle_soak_enable).toBe(false);
   });
 
-  it('attaches monitoring_observed with operating_ranges and measured_medians', () => {
+  it('attaches monitoring_observed with units preserved on every value', () => {
     const out = serializeZoneSettings(baseZone);
     expect(out.monitoring_observed).toEqual({
-      operating_ranges: { water_flow_rate: 1.2, electric_current: 380 },
-      measured_medians: { water_flow_rate: 1.18, electric_current: 402 },
+      operating_ranges: {
+        water_flow_rate: { value: 1.2, unit: 'gpm' },
+        electric_current: { value: 380, unit: 'mA' },
+      },
+      measured_medians: {
+        water_flow_rate: { value: 1.18, unit: 'gpm' },
+        electric_current: { value: 402, unit: 'mA' },
+      },
     });
   });
 
@@ -59,5 +85,222 @@ describe('serializeZoneSettings', () => {
     expect(out.current_monitoring_method).toBeNull();
     expect(out.flow_monitoring_value).toBeNull();
     expect(out.current_monitoring_value).toBeNull();
+  });
+
+  it('exposes _unreadable_fields listing writable-but-unreadable field names', () => {
+    const out = serializeZoneSettings(baseZone);
+    const unreadable = out._unreadable_fields as string[];
+    expect(unreadable).toContain('watering_mode');
+    expect(unreadable).toContain('flow_monitoring_value');
+    expect(unreadable).toContain('sensor_ids');
+    // Each name listed in _unreadable_fields must correspond to a null value in the serialized output.
+    for (const name of unreadable) {
+      expect(out[name]).toBeNull();
+    }
+  });
+
+  it('exposes master_valve_override from Zone.masterValve', () => {
+    expect(serializeZoneSettings({ ...baseZone, masterValve: -1 }).master_valve_override).toBe(-1);
+    expect(serializeZoneSettings({ ...baseZone, masterValve: 0 }).master_valve_override).toBe(0);
+    expect(serializeZoneSettings({ ...baseZone, masterValve: 7 }).master_valve_override).toBe(7);
+  });
+
+  it('serializes zone_notes from the Zone read', () => {
+    const out = serializeZoneSettings({
+      ...baseZone,
+      zoneNotes: [
+        {
+          id: 99,
+          note: 'Replaced solenoid spring 2025-08-12',
+          type: 'repair',
+          pinnedToTop: true,
+          lastUpdatedAt: { value: '2025-08-12T10:00:00Z' },
+        },
+      ],
+    });
+    const notes = out.zone_notes as Array<Record<string, unknown>>;
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toEqual({
+      id: 99,
+      note: 'Replaced solenoid spring 2025-08-12',
+      type: 'repair',
+      pinned_to_top: true,
+      last_updated_at: '2025-08-12T10:00:00Z',
+    });
+  });
+});
+
+describe('serializeLocation', () => {
+  it('flattens coordinates into top-level latitude/longitude', () => {
+    const loc: LocationRead = {
+      id: 7,
+      coordinates: { latitude: 39.6, longitude: -104.9 },
+      address: '1 Tufts Ln',
+      country: 'US',
+      state: 'CO',
+      locality: 'Centennial',
+    };
+    expect(serializeLocation(loc)).toEqual({
+      id: 7,
+      latitude: 39.6,
+      longitude: -104.9,
+      address: '1 Tufts Ln',
+      country: 'US',
+      state: 'CO',
+      locality: 'Centennial',
+    });
+  });
+
+  it('emits null lat/long when coordinates are absent', () => {
+    const loc: LocationRead = {
+      id: 7,
+      coordinates: null,
+      address: '...',
+      country: null,
+      state: null,
+      locality: null,
+    };
+    const out = serializeLocation(loc);
+    expect(out.latitude).toBeNull();
+    expect(out.longitude).toBeNull();
+  });
+});
+
+describe('serializeTimeZone', () => {
+  it('keeps name + offset', () => {
+    const tz: TimeZoneRead = { name: 'America/Denver', offset: -25200 };
+    expect(serializeTimeZone(tz)).toEqual({ name: 'America/Denver', offset: -25200 });
+  });
+});
+
+describe('serializeExpander', () => {
+  it('flattens model id and lists firmware entries', () => {
+    const e: ExpanderRead = {
+      id: 11,
+      name: 'Expander A',
+      number: 1,
+      hardware: {
+        model: { id: 'EXP-12' },
+        firmware: [
+          { type: 'main', version: 1.23, bank: 0 },
+          { type: 'rf', version: 2.0, bank: null },
+        ],
+      },
+    };
+    expect(serializeExpander(e)).toEqual({
+      id: 11,
+      name: 'Expander A',
+      number: 1,
+      model_id: 'EXP-12',
+      firmware: [
+        { type: 'main', version: 1.23, bank: 0 },
+        { type: 'rf', version: 2.0, bank: null },
+      ],
+    });
+  });
+});
+
+describe('serializeNote', () => {
+  it('serializes a controller note with snake_case fields', () => {
+    const n: ControllerNoteRead = {
+      id: 5,
+      note: 'Winterized 2025-10-01',
+      type: 'repair',
+      pinnedToTop: false,
+      lastUpdatedAt: { value: '2025-10-01T08:00:00Z' },
+    };
+    expect(serializeNote(n)).toEqual({
+      id: 5,
+      note: 'Winterized 2025-10-01',
+      type: 'repair',
+      pinned_to_top: false,
+      last_updated_at: '2025-10-01T08:00:00Z',
+    });
+  });
+});
+
+describe('serializeRunTimeGroup', () => {
+  it('renames duration to duration_minutes', () => {
+    const g: RunTimeGroupRead = { id: 1, name: 'Standard', duration: 30 };
+    expect(serializeRunTimeGroup(g)).toEqual({ id: 1, name: 'Standard', duration_minutes: 30 });
+  });
+});
+
+describe('serializeWateringTriggers (units)', () => {
+  it('emits {value, unit} for every LocalizedValueType field', () => {
+    const t: WateringTriggersRead = {
+      id: 1,
+      extendWaterTemperature: { value: 96.99998, unit: 'F' },
+      extendWaterTemperatureEnabled: true,
+      extendWaterTemperaturePercentage: 20,
+      extendWaterHumidity: 100,
+      extendWaterHumidityEnabled: false,
+      suspendWaterWeekRain: { value: 1.2, unit: 'in' },
+      suspendWaterRainDays: 3,
+      suspendWaterWeekRainEnabled: false,
+      suspendWaterRain: { value: 0.2, unit: 'in' },
+      suspendWaterRainEnabled: false,
+      suspendWaterTemperature: { value: 50, unit: 'F' },
+      suspendWaterTemperatureEnabled: true,
+      suspendProbabilityOfPrecipitation: 70,
+      suspendProbabilityOfPrecipitationEnabled: true,
+      suspendWind: { value: 25, unit: 'mph' },
+      suspendWindEnabled: true,
+      enableEvapotranspirationForecastTemperature: true,
+      enableEvapotranspirationForecastRain: true,
+      reduceWaterTemperatureEnabled: true,
+      reduceWaterTemperature: { value: 75, unit: 'F' },
+      reduceWaterTemperaturePercentage: 30,
+    };
+    const out = serializeWateringTriggers(t);
+    expect(out.extend_water_temperature).toEqual({ value: 96.99998, unit: 'F' });
+    expect(out.suspend_water_temperature).toEqual({ value: 50, unit: 'F' });
+    expect(out.reduce_water_temperature).toEqual({ value: 75, unit: 'F' });
+    expect(out.suspend_wind).toEqual({ value: 25, unit: 'mph' });
+    expect(out.suspend_water_rain).toEqual({ value: 0.2, unit: 'in' });
+    expect(out.suspend_water_week_rain).toEqual({ value: 1.2, unit: 'in' });
+    // Plain Int fields stay as bare numbers (no unit on the schema side).
+    expect(out.extend_water_humidity).toBe(100);
+    expect(out.suspend_probability_of_precipitation).toBe(70);
+    expect(out.reduce_water_temperature_percentage).toBe(30);
+  });
+});
+
+describe('serializeStandardProgram', () => {
+  it('inlines start_times, days_run, periodicity, valid_from/to, schedule_adjustment_ids, per_zone_run_times', () => {
+    const p: StandardProgramRead = {
+      __typename: 'StandardProgram',
+      id: 6390589,
+      name: 'Lawn',
+      appliesToZones: [{ id: 100, number: { value: 1 }, name: '1. Test' }],
+      schedulingMethod: { value: 3, label: 'Virtual Solar Sync' },
+      monthlyWateringAdjustments: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      startTimes: ['22:00'],
+      ignoreRainSensor: false,
+      daysRun: ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+      standardProgramDayPattern: 'interval',
+      periodicity: { period: 2, seriesStart: { value: 'Thu, 26 Jun 25 00:00:00 -0600' } },
+      timeRange: { validFrom: null, validTo: null },
+      conditionalWateringAdjustments: [{ id: 17, label: 'Vacation' }],
+      applications: [
+        {
+          zone: { id: 100, number: { value: 1 } },
+          runTimeGroup: { id: 200, name: null, duration: 10 },
+        },
+      ],
+    };
+    const out = serializeStandardProgram(p);
+    expect(out.id).toBe(6390589);
+    expect(out.name).toBe('Lawn');
+    expect(out.program_type).toBe('Standard');
+    expect(out.start_times).toEqual(['22:00']);
+    expect(out.days_run).toHaveLength(7);
+    expect(out.periodicity).toEqual({ period: 2, series_start: 'Thu, 26 Jun 25 00:00:00 -0600' });
+    expect(out.valid_from).toBeNull();
+    expect(out.valid_to).toBeNull();
+    expect(out.schedule_adjustment_ids).toEqual([17]);
+    expect(out.per_zone_run_times).toEqual([
+      { zone_id: 100, zone_number: 1, run_time_group_id: 200, run_time_group_name: null, duration_minutes: 10 },
+    ]);
   });
 });

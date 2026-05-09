@@ -3,13 +3,22 @@ import type { HydrawiseClient } from './client.js';
 import {
   CONTROLLER_QUERY,
   CONTROLLERS_QUERY,
+  CREATE_CONTROLLER_NOTE_MUTATION,
+  CREATE_EXPANDER_MUTATION,
   CREATE_PROGRAM_START_TIME_MUTATION,
   CREATE_SMART_WATERING_PROGRAM_MUTATION,
   CREATE_STANDARD_PROGRAM_MUTATION,
   CREATE_TIME_WATERING_PROGRAM_MUTATION,
   CREATE_VSS_WATERING_PROGRAM_MUTATION,
+  CREATE_ZONE_ADVANCED_MUTATION,
+  CREATE_ZONE_NOTE_MUTATION,
+  DELETE_CONTROLLER_NOTE_MUTATION,
+  DELETE_EXPANDER_MUTATION,
   DELETE_PROGRAM_START_TIME_MUTATION,
   DELETE_STANDARD_PROGRAM_MUTATION,
+  DELETE_ZONE_MUTATION,
+  DELETE_ZONE_NOTE_MUTATION,
+  HIBERNATE_CONTROLLER_MUTATION,
   ME_QUERY,
   PROGRAM_START_TIMES_QUERY,
   PROGRAMS_FULL_QUERY,
@@ -25,6 +34,12 @@ import {
   STOP_ZONE_MUTATION,
   SUSPEND_ALL_ZONES_MUTATION,
   SUSPEND_ZONE_MUTATION,
+  UPDATE_CONTROLLER_MASTER_VALVE_MUTATION,
+  UPDATE_CONTROLLER_NOTE_MUTATION,
+  UPDATE_CONTROLLER_PROGRAM_MODE_MUTATION,
+  UPDATE_EXPANDER_MUTATION,
+  UPDATE_LOCATION_MUTATION,
+  UPDATE_LOCATION_COORDINATES_MUTATION,
   UPDATE_PROGRAM_START_TIME_MUTATION,
   UPDATE_SEASONAL_ADJUSTMENTS_MUTATION,
   UPDATE_SMART_WATERING_PROGRAM_MUTATION,
@@ -33,6 +48,8 @@ import {
   UPDATE_VSS_WATERING_PROGRAM_MUTATION,
   UPDATE_WATERING_TRIGGERS_MUTATION,
   UPDATE_ZONE_ADVANCED_MUTATION,
+  UPDATE_ZONE_NOTE_MUTATION,
+  WAKE_CONTROLLER_MUTATION,
   WATERING_REPORT_QUERY,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
@@ -44,6 +61,9 @@ import {
   ZONE_RUN_SUMMARY_WEEKLY_QUERY,
   ZONES_QUERY,
   type Controller,
+  type ControllerNoteRead,
+  type LocationRead,
+  type MasterValveRead,
   type PastZoneRuns,
   type ProgramListEntry,
   type ProgramStartTimeRead,
@@ -59,9 +79,39 @@ import {
   type WateringTriggersRead,
   type WateringTriggersWritable,
   type Zone,
+  type ZoneCreatePayload,
+  type ZoneNoteRead,
   type ZoneRichRead,
   type ZoneWritable,
 } from './queries.js';
+
+export type ControllerProgramMode = 'STANDARD' | 'ADVANCED';
+export type NoteType = 'fault' | 'location' | 'repair' | 'comment';
+
+export interface UpdateLocationPayload {
+  device_id: number;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface ExpanderCreatePayload {
+  controller_id: number;
+  name: string;
+  number: number;
+}
+
+export interface ExpanderUpdatePayload {
+  expander_id: number;
+  name: string;
+  number: number;
+}
+
+export interface NotePayload {
+  note: string;
+  type: NoteType;
+  pinned_to_top?: boolean;
+}
 
 export type RunSummaryPeriod = 'CURRENT_WEEK' | 'WEEK' | 'MONTH' | 'YEAR';
 
@@ -498,6 +548,262 @@ export class HydrawiseApi {
       requireMutationResultNamed(op, data[op]),
     );
   }
+
+  // Controller config — location, master valve, program mode, hibernate, expanders
+
+  async updateLocation(payload: UpdateLocationPayload): Promise<LocationRead> {
+    const hasAddress = typeof payload.address === 'string';
+    const hasCoords = typeof payload.latitude === 'number' && typeof payload.longitude === 'number';
+    if (!hasAddress && !hasCoords) {
+      throw new HydrawiseMutationError('updateLocation requires at least one of address, latitude+longitude');
+    }
+    let result: LocationRead | null = null;
+    if (hasAddress) {
+      result = await this.client.mutateRaw(
+        UPDATE_LOCATION_MUTATION,
+        { deviceId: payload.device_id, address: payload.address },
+        (data) => data.updateLocation as LocationRead | null,
+      );
+    }
+    if (hasCoords) {
+      result = await this.client.mutateRaw(
+        UPDATE_LOCATION_COORDINATES_MUTATION,
+        { deviceId: payload.device_id, latitude: payload.latitude, longitude: payload.longitude },
+        (data) => data.updateLocationCoordinates as LocationRead | null,
+      );
+    }
+    if (!result) {
+      throw new HydrawiseMutationError('updateLocation returned null; the operation may not have taken effect');
+    }
+    return result;
+  }
+
+  async updateControllerMasterValve(controllerId: number, zoneNumber: number): Promise<MasterValveRead> {
+    return this.client.mutateRaw(
+      UPDATE_CONTROLLER_MASTER_VALVE_MUTATION,
+      { controllerId, zoneNumber },
+      (data) => {
+        const v = data.updateControllerMasterValve as MasterValveRead | null;
+        if (!v) {
+          throw new HydrawiseMutationError('updateControllerMasterValve returned null');
+        }
+        return v;
+      },
+    );
+  }
+
+  async updateControllerProgramMode(controllerId: number, mode: ControllerProgramMode): Promise<{ id: number; programMode: ControllerProgramMode }> {
+    return this.client.mutateRaw(
+      UPDATE_CONTROLLER_PROGRAM_MODE_MUTATION,
+      { controllerId, programMode: mode },
+      (data) => {
+        const v = data.updateControllerProgramMode as { id: number; programMode: ControllerProgramMode } | null;
+        if (!v || typeof v.id !== 'number') {
+          throw new HydrawiseMutationError('updateControllerProgramMode returned null or malformed');
+        }
+        return v;
+      },
+    );
+  }
+
+  async hibernateController(controllerId: number): Promise<true> {
+    return this.client.mutateRaw(
+      HIBERNATE_CONTROLLER_MUTATION,
+      { controllerId },
+      (data) => {
+        if (data.hibernateController !== true) {
+          throw new HydrawiseMutationError(`hibernateController returned ${JSON.stringify(data.hibernateController)}`);
+        }
+        return true;
+      },
+    );
+  }
+
+  async wakeController(controllerId: number): Promise<true> {
+    return this.client.mutateRaw(
+      WAKE_CONTROLLER_MUTATION,
+      { controllerId },
+      (data) => {
+        if (data.wakeController !== true) {
+          throw new HydrawiseMutationError(`wakeController returned ${JSON.stringify(data.wakeController)}`);
+        }
+        return true;
+      },
+    );
+  }
+
+  async createExpander(payload: ExpanderCreatePayload): Promise<{ id: number; name: string; number: number }> {
+    return this.client.mutateRaw(
+      CREATE_EXPANDER_MUTATION,
+      { controllerId: payload.controller_id, name: payload.name, number: payload.number },
+      (data) => requireExpander('createExpander', data.createExpander),
+    );
+  }
+
+  async updateExpander(payload: ExpanderUpdatePayload): Promise<{ id: number; name: string; number: number }> {
+    return this.client.mutateRaw(
+      UPDATE_EXPANDER_MUTATION,
+      { expanderId: payload.expander_id, name: payload.name, number: payload.number },
+      (data) => requireExpander('updateExpander', data.updateExpander),
+    );
+  }
+
+  async deleteExpander(expanderId: number): Promise<true> {
+    return this.client.mutateRaw(
+      DELETE_EXPANDER_MUTATION,
+      { expanderId },
+      (data) => {
+        if (data.deleteExpander !== true) {
+          throw new HydrawiseMutationError(`deleteExpander returned ${JSON.stringify(data.deleteExpander)}; the operation may not have taken effect`);
+        }
+        return true;
+      },
+    );
+  }
+
+  // Notes — controller and zone variants
+
+  async createControllerNote(controllerId: number, payload: NotePayload): Promise<ControllerNoteRead> {
+    return this.client.mutateRaw(
+      CREATE_CONTROLLER_NOTE_MUTATION,
+      { controllerId, note: payload.note, type: payload.type, pinnedToTop: payload.pinned_to_top ?? false },
+      (data) => requireNote('createControllerNote', data.createControllerNote) as ControllerNoteRead,
+    );
+  }
+
+  async updateControllerNote(noteId: number, controllerId: number, payload: NotePayload): Promise<ControllerNoteRead> {
+    return this.client.mutateRaw(
+      UPDATE_CONTROLLER_NOTE_MUTATION,
+      { noteId, controllerId, note: payload.note, type: payload.type, pinnedToTop: payload.pinned_to_top ?? false },
+      (data) => requireNote('updateControllerNote', data.updateControllerNote) as ControllerNoteRead,
+    );
+  }
+
+  async deleteControllerNote(noteId: number): Promise<StatusCodeAndSummary> {
+    return this.client.mutateRaw(
+      DELETE_CONTROLLER_NOTE_MUTATION,
+      { noteId },
+      (data) => requireStatus('deleteControllerNote', data.deleteControllerNote),
+    );
+  }
+
+  async createZoneNote(zoneId: number, payload: NotePayload): Promise<ZoneNoteRead> {
+    return this.client.mutateRaw(
+      CREATE_ZONE_NOTE_MUTATION,
+      { zoneId, note: payload.note, type: payload.type, pinnedToTop: payload.pinned_to_top ?? false },
+      (data) => requireNote('createZoneNote', data.createZoneNote) as ZoneNoteRead,
+    );
+  }
+
+  async updateZoneNote(noteId: number, zoneId: number, payload: NotePayload): Promise<ZoneNoteRead> {
+    return this.client.mutateRaw(
+      UPDATE_ZONE_NOTE_MUTATION,
+      { noteId, zoneId, note: payload.note, type: payload.type, pinnedToTop: payload.pinned_to_top ?? false },
+      (data) => requireNote('updateZoneNote', data.updateZoneNote) as ZoneNoteRead,
+    );
+  }
+
+  async deleteZoneNote(noteId: number): Promise<StatusCodeAndSummary> {
+    return this.client.mutateRaw(
+      DELETE_ZONE_NOTE_MUTATION,
+      { noteId },
+      (data) => requireStatus('deleteZoneNote', data.deleteZoneNote),
+    );
+  }
+
+  // Zone CRUD (Advanced variant only — deprecated `createZone` not wrapped)
+
+  async createZoneAdvanced(payload: ZoneCreatePayload): Promise<{ id: number; name: string; number: { value: number } }> {
+    return this.client.mutateRaw(
+      CREATE_ZONE_ADVANCED_MUTATION,
+      zoneCreatePayloadToVars(payload),
+      (data) => {
+        const z = data.createZoneAdvanced as { id: number; name: string; number: { value: number } } | null;
+        if (!z || typeof z.id !== 'number') {
+          throw new HydrawiseMutationError('createZoneAdvanced returned null or malformed');
+        }
+        return z;
+      },
+    );
+  }
+
+  async deleteZone(zoneId: number): Promise<true> {
+    return this.client.mutateRaw(
+      DELETE_ZONE_MUTATION,
+      { zoneId },
+      (data) => {
+        if (data.deleteZone !== true) {
+          throw new HydrawiseMutationError(`deleteZone returned ${JSON.stringify(data.deleteZone)}; the operation may not have taken effect`);
+        }
+        return true;
+      },
+    );
+  }
+}
+
+function requireExpander(op: string, value: unknown): { id: number; name: string; number: number } {
+  if (!value || typeof value !== 'object') {
+    throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
+  }
+  const v = value as { id?: unknown; name?: unknown; number?: unknown };
+  if (typeof v.id !== 'number' || typeof v.name !== 'string' || typeof v.number !== 'number') {
+    throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
+  }
+  return { id: v.id, name: v.name, number: v.number };
+}
+
+function requireNote(op: string, value: unknown): { id: number; note: string; type: NoteType; pinnedToTop: boolean; lastUpdatedAt: { value: string } | null } {
+  if (!value || typeof value !== 'object') {
+    throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
+  }
+  const v = value as { id?: unknown; note?: unknown; type?: unknown; pinnedToTop?: unknown; lastUpdatedAt?: unknown };
+  if (typeof v.id !== 'number' || typeof v.note !== 'string' || typeof v.pinnedToTop !== 'boolean') {
+    throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
+  }
+  return value as ReturnType<typeof requireNote>;
+}
+
+function requireStatus(op: string, value: unknown): StatusCodeAndSummary {
+  if (!value || typeof value !== 'object') {
+    throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
+  }
+  const v = value as { status?: unknown };
+  if (v.status !== 'OK' && v.status !== 'WARNING') {
+    throw new HydrawiseMutationError(`${op} returned non-OK status: ${JSON.stringify(value)}`);
+  }
+  return value as StatusCodeAndSummary;
+}
+
+function zoneCreatePayloadToVars(p: ZoneCreatePayload): Record<string, unknown> {
+  return {
+    controllerId: p.controller_id,
+    icon: p.icon,
+    name: p.name,
+    number: p.number,
+    wateringMode: p.watering_mode,
+    globalMasterValve: p.global_master_valve,
+    scheduleAdjustmentIds: p.schedule_adjustment_ids,
+    wateringAdjustment: p.watering_adjustment,
+    wateringType: p.watering_type,
+    runTime: p.run_time,
+    wateringFrequencyMode: p.watering_frequency_mode,
+    fixedWateringFrequency: p.fixed_watering_frequency,
+    smartWateringFrequency: p.smart_watering_frequency,
+    virtualSolarSyncWateringFrequency: p.virtual_solar_sync_watering_frequency,
+    runNextAvailableStartTime: p.run_next_available_start_time,
+    preConfiguredWateringScheduleId: p.pre_configured_watering_schedule_id,
+    cycleSoakEnable: p.cycle_soak_enable,
+    cycleCustomTime: p.cycle_custom_time,
+    soakCustomTime: p.soak_custom_time,
+    factors: p.factors,
+    sensorIds: p.sensor_ids,
+    reusableSchedule: p.reusable_schedule,
+    reusableScheduleName: p.reusable_schedule_name,
+    flowMonitoringMethod: p.flow_monitoring_method,
+    currentMonitoringMethod: p.current_monitoring_method,
+    flowMonitoringValue: p.flow_monitoring_value,
+    currentMonitoringValue: p.current_monitoring_value,
+  };
 }
 
 function wateringProgramMutation(type: WateringProgramWritable['program_type'], isUpdate: boolean): string {

@@ -6,6 +6,8 @@ export interface User {
 
 export interface Controller {
   id: number;
+  // deviceId is required by location mutations (updateLocation, updateLocationCoordinates) — distinct from id.
+  deviceId: number;
   name: string | null;
   online: boolean | null;
   softwareVersion: string | null;
@@ -15,8 +17,89 @@ export interface Controller {
     status: string | null;
     installationTime: { value: string } | null;
     model: { id: string; name: string; family: { name?: string | null } | null } | null;
+    modules: ModuleRead[] | null;
   } | null;
   lastContactTime: { value: string } | null;
+  location: LocationRead | null;
+  settings: ControllerSettingsRead | null;
+  masterZone: MasterValveRead | null;
+  expanders: ExpanderRead[] | null;
+  runTimeGroups: RunTimeGroupRead[];
+  controllerNotes: ControllerNoteRead[];
+}
+
+export interface GeoCoordinatesRead {
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface LocationRead {
+  id: number;
+  coordinates: GeoCoordinatesRead | null;
+  address: string | null;
+  country: string | null;
+  state: string | null;
+  locality: string | null;
+}
+
+export interface TimeZoneRead {
+  name: string;
+  offset: number;
+}
+
+export interface MasterValveRead {
+  zoneNumber: { value: number } | null;
+  delay: number | null;
+  postTimer: number | null;
+}
+
+export interface ControllerSettingsRead {
+  timeZone: TimeZoneRead | null;
+  zones: {
+    interZoneDelay: number;
+    masterZone: MasterValveRead | null;
+  } | null;
+}
+
+export interface ExpanderRead {
+  id: number;
+  name: string;
+  number: number;
+  hardware: {
+    model: { id: string };
+    firmware: { type: string; version: number | null; bank: number | null }[] | null;
+  };
+}
+
+export interface ModuleRead {
+  // Long scalar from upstream — serialized as string to dodge JS Int53 issues.
+  id: string;
+  name: string;
+  serialNumber: string;
+  moduleType: string;
+  firmwareVersion: string;
+}
+
+export interface RunTimeGroupRead {
+  id: number;
+  name: string | null;
+  duration: number;
+}
+
+export interface ControllerNoteRead {
+  id: number;
+  note: string;
+  type: 'fault' | 'location' | 'repair' | 'comment';
+  pinnedToTop: boolean;
+  lastUpdatedAt: { value: string } | null;
+}
+
+export interface ZoneNoteRead {
+  id: number;
+  note: string;
+  type: 'fault' | 'location' | 'repair' | 'comment';
+  pinnedToTop: boolean;
+  lastUpdatedAt: { value: string } | null;
 }
 
 export interface Zone {
@@ -42,6 +125,7 @@ export const ME_QUERY = /* GraphQL */ `
 
 const CONTROLLER_FIELDS = /* GraphQL */ `
   id
+  deviceId
   name
   online
   softwareVersion
@@ -59,9 +143,79 @@ const CONTROLLER_FIELDS = /* GraphQL */ `
         name
       }
     }
+    modules {
+      id
+      name
+      serialNumber
+      moduleType
+      firmwareVersion
+    }
   }
   lastContactTime {
     value
+  }
+  location {
+    id
+    coordinates {
+      latitude
+      longitude
+    }
+    address
+    country
+    state
+    locality
+  }
+  settings {
+    timeZone {
+      name
+      offset
+    }
+    zones {
+      interZoneDelay
+      masterZone {
+        zoneNumber {
+          value
+        }
+        delay
+        postTimer
+      }
+    }
+  }
+  masterZone {
+    zoneNumber {
+      value
+    }
+    delay
+    postTimer
+  }
+  expanders {
+    id
+    name
+    number
+    hardware {
+      model {
+        id
+      }
+      firmware {
+        type
+        version
+        bank
+      }
+    }
+  }
+  runTimeGroups {
+    id
+    name
+    duration
+  }
+  controllerNotes {
+    id
+    note
+    type
+    pinnedToTop
+    lastUpdatedAt {
+      value
+    }
   }
 `;
 
@@ -369,6 +523,8 @@ export interface ZoneRichRead {
   name: string;
   number: { value: number };
   icon: { id: number | null } | null;
+  // -1 = follow controller-global master valve; 0 = always disabled; else specific zone number.
+  masterValve: number;
   wateringSettings: {
     fixedWateringAdjustment: number;
     cycleAndSoakSettings: {
@@ -378,22 +534,24 @@ export interface ZoneRichRead {
   } | null;
   monitoringSettings: {
     operatingRanges: {
-      waterFlowRate: { value: number | null } | null;
-      electricCurrent: { value: number | null } | null;
+      waterFlowRate: { value: number | null; unit: string | null } | null;
+      electricCurrent: { value: number | null; unit: string | null } | null;
     } | null;
     measuredMedians: {
-      waterFlowRate: { value: number | null } | null;
-      electricCurrent: { value: number | null } | null;
+      waterFlowRate: { value: number | null; unit: string | null } | null;
+      electricCurrent: { value: number | null; unit: string | null } | null;
     } | null;
   } | null;
   status: {
     suspendedUntil: { value: string } | null;
   };
+  zoneNotes: ZoneNoteRead[];
 }
 
 export interface LocalizedValue {
   value: number | null;
-  unit?: string | null;
+  // Always select `unit` from LocalizedValueType in queries — the snapshot needs it to detect unit-pref drift between capture and restore.
+  unit: string | null;
 }
 
 export interface WateringTriggersRead {
@@ -425,6 +583,8 @@ export interface ProgramStartTimeRead {
   id: number;
   type: { value: number; label?: string | null } | null;
   time: { value: string } | { hour: number; minute: number } | null;
+  // EVEN | ODD | DAYS | MONDAY..SUNDAY
+  wateringDays: string[] | null;
   application: {
     all: boolean;
     zones: { id: number }[] | null;
@@ -443,6 +603,7 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
       icon {
         id
       }
+      masterValve
       wateringSettings {
         fixedWateringAdjustment
         cycleAndSoakSettings {
@@ -454,22 +615,35 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
         operatingRanges {
           waterFlowRate {
             value
+            unit
           }
           electricCurrent {
             value
+            unit
           }
         }
         measuredMedians {
           waterFlowRate {
             value
+            unit
           }
           electricCurrent {
             value
+            unit
           }
         }
       }
       status {
         suspendedUntil {
+          value
+        }
+      }
+      zoneNotes {
+        id
+        note
+        type
+        pinnedToTop
+        lastUpdatedAt {
           value
         }
       }
@@ -590,6 +764,14 @@ export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
               value
             }
           }
+          timeRange {
+            validFrom
+            validTo
+          }
+          conditionalWateringAdjustments(controllerId: $controllerId) {
+            id
+            label
+          }
           applications {
             zone {
               id
@@ -621,6 +803,9 @@ export interface StandardProgramRead {
   daysRun: string[];
   standardProgramDayPattern: string | null;
   periodicity: { period: number; seriesStart: { value: string } | null } | null;
+  // The schema's `timeRange: Unit!` field — Unit { validFrom, validTo } in Int seconds-since-epoch (or null = unbounded).
+  timeRange: { validFrom: number | null; validTo: number | null } | null;
+  conditionalWateringAdjustments: { id: number; label: string }[];
   applications: {
     zone: { id: number; number: { value: number } };
     runTimeGroup: { id: number; name: string | null; duration: number };
@@ -638,6 +823,7 @@ export const PROGRAM_START_TIMES_QUERY = /* GraphQL */ `
             type {
               value
             }
+            wateringDays
             application {
               all
               zones {
@@ -1343,3 +1529,262 @@ export const ZONE_RUN_SUMMARY_ANNUAL_QUERY = /* GraphQL */ `
     }
   }
 `;
+
+// Controller config mutations (location, master valve, program mode, hibernate, expanders)
+
+export const UPDATE_LOCATION_MUTATION = /* GraphQL */ `
+  mutation UpdateLocation($deviceId: Int!, $address: String!) {
+    updateLocation(deviceId: $deviceId, address: $address) {
+      id
+      address
+      country
+      state
+      locality
+      coordinates {
+        latitude
+        longitude
+      }
+    }
+  }
+`;
+
+export const UPDATE_LOCATION_COORDINATES_MUTATION = /* GraphQL */ `
+  mutation UpdateLocationCoordinates($deviceId: Int!, $latitude: Float!, $longitude: Float!) {
+    updateLocationCoordinates(deviceId: $deviceId, latitude: $latitude, longitude: $longitude) {
+      id
+      address
+      coordinates {
+        latitude
+        longitude
+      }
+    }
+  }
+`;
+
+export const UPDATE_CONTROLLER_MASTER_VALVE_MUTATION = /* GraphQL */ `
+  mutation UpdateControllerMasterValve($zoneNumber: Int!, $controllerId: Int!) {
+    updateControllerMasterValve(zoneNumber: $zoneNumber, controllerId: $controllerId) {
+      zoneNumber {
+        value
+      }
+      delay
+      postTimer
+    }
+  }
+`;
+
+export const UPDATE_CONTROLLER_PROGRAM_MODE_MUTATION = /* GraphQL */ `
+  mutation UpdateControllerProgramMode($controllerId: Int!, $programMode: ControllerProgramModeEnum) {
+    updateControllerProgramMode(controllerId: $controllerId, programMode: $programMode) {
+      id
+      programMode
+    }
+  }
+`;
+
+export const HIBERNATE_CONTROLLER_MUTATION = /* GraphQL */ `
+  mutation HibernateController($controllerId: Int!) {
+    hibernateController(controllerId: $controllerId)
+  }
+`;
+
+export const WAKE_CONTROLLER_MUTATION = /* GraphQL */ `
+  mutation WakeController($controllerId: Int!) {
+    wakeController(controllerId: $controllerId)
+  }
+`;
+
+export const CREATE_EXPANDER_MUTATION = /* GraphQL */ `
+  mutation CreateExpander($controllerId: Int!, $name: String!, $number: Int!) {
+    createExpander(controllerId: $controllerId, name: $name, number: $number) {
+      id
+      name
+      number
+    }
+  }
+`;
+
+export const UPDATE_EXPANDER_MUTATION = /* GraphQL */ `
+  mutation UpdateExpander($expanderId: Int!, $name: String!, $number: Int!) {
+    updateExpander(expanderId: $expanderId, name: $name, number: $number) {
+      id
+      name
+      number
+    }
+  }
+`;
+
+export const DELETE_EXPANDER_MUTATION = /* GraphQL */ `
+  mutation DeleteExpander($expanderId: Int!) {
+    deleteExpander(expanderId: $expanderId)
+  }
+`;
+
+// Note CRUD mutations
+
+const NOTE_FIELDS = /* GraphQL */ `
+  id
+  note
+  type
+  pinnedToTop
+  lastUpdatedAt {
+    value
+  }
+`;
+
+export const CREATE_CONTROLLER_NOTE_MUTATION = /* GraphQL */ `
+  mutation CreateControllerNote($controllerId: Int!, $note: String!, $type: NoteType!, $pinnedToTop: Boolean!) {
+    createControllerNote(controllerId: $controllerId, note: $note, type: $type, pinnedToTop: $pinnedToTop) {
+      ${NOTE_FIELDS}
+    }
+  }
+`;
+
+export const UPDATE_CONTROLLER_NOTE_MUTATION = /* GraphQL */ `
+  mutation UpdateControllerNote($noteId: Int!, $controllerId: Int!, $note: String!, $type: NoteType!, $pinnedToTop: Boolean!) {
+    updateControllerNote(noteId: $noteId, controllerId: $controllerId, note: $note, type: $type, pinnedToTop: $pinnedToTop) {
+      ${NOTE_FIELDS}
+    }
+  }
+`;
+
+export const DELETE_CONTROLLER_NOTE_MUTATION = /* GraphQL */ `
+  mutation DeleteControllerNote($noteId: Int!) {
+    deleteControllerNote(noteId: $noteId) {
+      status
+      summary
+    }
+  }
+`;
+
+export const CREATE_ZONE_NOTE_MUTATION = /* GraphQL */ `
+  mutation CreateZoneNote($zoneId: Int!, $note: String!, $type: NoteType!, $pinnedToTop: Boolean!) {
+    createZoneNote(zoneId: $zoneId, note: $note, type: $type, pinnedToTop: $pinnedToTop) {
+      ${NOTE_FIELDS}
+    }
+  }
+`;
+
+export const UPDATE_ZONE_NOTE_MUTATION = /* GraphQL */ `
+  mutation UpdateZoneNote($noteId: Int!, $zoneId: Int!, $note: String!, $type: NoteType!, $pinnedToTop: Boolean!) {
+    updateZoneNote(noteId: $noteId, zoneId: $zoneId, note: $note, type: $type, pinnedToTop: $pinnedToTop) {
+      ${NOTE_FIELDS}
+    }
+  }
+`;
+
+export const DELETE_ZONE_NOTE_MUTATION = /* GraphQL */ `
+  mutation DeleteZoneNote($noteId: Int!) {
+    deleteZoneNote(noteId: $noteId) {
+      status
+      summary
+    }
+  }
+`;
+
+// Zone create/delete (Advanced variant — the deprecated createZone is intentionally not wrapped)
+
+export const CREATE_ZONE_ADVANCED_MUTATION = /* GraphQL */ `
+  mutation CreateZoneAdvanced(
+    $controllerId: Int!
+    $icon: Int
+    $name: String!
+    $number: Int!
+    $wateringMode: Int!
+    $globalMasterValve: Int!
+    $scheduleAdjustmentIds: [Int]!
+    $wateringAdjustment: Int!
+    $wateringType: Int!
+    $runTime: Int
+    $wateringFrequencyMode: Int!
+    $fixedWateringFrequency: Int
+    $smartWateringFrequency: Int
+    $virtualSolarSyncWateringFrequency: Int
+    $runNextAvailableStartTime: Boolean
+    $preConfiguredWateringScheduleId: Int
+    $cycleSoakEnable: Boolean
+    $cycleCustomTime: Int
+    $soakCustomTime: Int
+    $factors: [Int]
+    $sensorIds: [Int]
+    $reusableSchedule: Boolean
+    $reusableScheduleName: String
+    $flowMonitoringMethod: MonitoringMethodEnum
+    $currentMonitoringMethod: MonitoringMethodEnum
+    $flowMonitoringValue: Float
+    $currentMonitoringValue: Int
+  ) {
+    createZoneAdvanced(
+      controllerId: $controllerId
+      icon: $icon
+      name: $name
+      number: $number
+      wateringMode: $wateringMode
+      globalMasterValve: $globalMasterValve
+      scheduleAdjustmentIds: $scheduleAdjustmentIds
+      wateringAdjustment: $wateringAdjustment
+      wateringType: $wateringType
+      runTime: $runTime
+      wateringFrequencyMode: $wateringFrequencyMode
+      fixedWateringFrequency: $fixedWateringFrequency
+      smartWateringFrequency: $smartWateringFrequency
+      virtualSolarSyncWateringFrequency: $virtualSolarSyncWateringFrequency
+      runNextAvailableStartTime: $runNextAvailableStartTime
+      preConfiguredWateringScheduleId: $preConfiguredWateringScheduleId
+      cycleSoakEnable: $cycleSoakEnable
+      cycleCustomTime: $cycleCustomTime
+      soakCustomTime: $soakCustomTime
+      factors: $factors
+      sensorIds: $sensorIds
+      reusableSchedule: $reusableSchedule
+      reusableScheduleName: $reusableScheduleName
+      flowMonitoringMethod: $flowMonitoringMethod
+      currentMonitoringMethod: $currentMonitoringMethod
+      flowMonitoringValue: $flowMonitoringValue
+      currentMonitoringValue: $currentMonitoringValue
+    ) {
+      id
+      name
+      number {
+        value
+      }
+    }
+  }
+`;
+
+export const DELETE_ZONE_MUTATION = /* GraphQL */ `
+  mutation DeleteZone($zoneId: Int!) {
+    deleteZone(zoneId: $zoneId)
+  }
+`;
+
+// Writable shape for create_zone — same as ZoneWritable minus zone_id, plus controller_id.
+export interface ZoneCreatePayload {
+  controller_id: number;
+  icon: number | null;
+  name: string;
+  number: number;
+  watering_mode: number;
+  global_master_valve: number;
+  schedule_adjustment_ids: number[];
+  watering_adjustment: number;
+  watering_type: number;
+  run_time: number | null;
+  watering_frequency_mode: number;
+  fixed_watering_frequency: number | null;
+  smart_watering_frequency: number | null;
+  virtual_solar_sync_watering_frequency: number | null;
+  run_next_available_start_time: boolean | null;
+  pre_configured_watering_schedule_id: number | null;
+  cycle_soak_enable: boolean | null;
+  cycle_custom_time: number | null;
+  soak_custom_time: number | null;
+  factors: number[] | null;
+  sensor_ids: number[] | null;
+  reusable_schedule: boolean | null;
+  reusable_schedule_name: string | null;
+  flow_monitoring_method: MonitoringMethod | null;
+  current_monitoring_method: MonitoringMethod | null;
+  flow_monitoring_value: number | null;
+  current_monitoring_value: number | null;
+}
