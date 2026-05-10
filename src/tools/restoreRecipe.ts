@@ -119,6 +119,7 @@ interface SnapshotStandardProgram {
   start_times: string[];
   days_run: string[];
   standard_program_day_pattern: string | null;
+  day_pattern: string | null;
   scheduling_method: number | null;
   monthly_watering_adjustment_percents: number[];
   schedule_adjustment_ids: number[];
@@ -456,7 +457,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         // string); the snapshot's "Standard" discriminator doesn't map here. Pass null
         // — the AI must resolve from get_program before applying. Captured in notes.
         program_type: null,
-        day_pattern: null,
+        day_pattern: sp.day_pattern,
         standard_program_day_pattern: sp.standard_program_day_pattern,
         interval_days: sp.periodicity?.period ?? null,
         series_start_epoch_seconds: sp.periodicity?.series_start_epoch_seconds ?? null,
@@ -473,7 +474,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         ignore_rain_sensor: null,
       },
       [],
-      'REQUIRED MERGE BEFORE APPLY: program_type, day_pattern, run_duration (every zone), and ignore_rain_sensor arrive null here — the read schema does not expose them. Call get_program(controller_id, program_id, "Standard") first, merge all non-null snapshot values over the live values, then apply. Skipping the merge and replaying null run_duration values verbatim will silently zero out every zone\'s run time.',
+      'REQUIRED MERGE BEFORE APPLY: program_type, run_duration (every zone), and ignore_rain_sensor arrive null here — the read schema does not expose them. day_pattern is now populated from the snapshot for dow-mode programs and can be used as-is. Call get_program(controller_id, program_id, "Standard") first, merge all non-null snapshot values over the live values, then apply. Skipping the merge and replaying null run_duration values verbatim will silently zero out every zone\'s run time.',
     );
     programStepOrders.push(order);
   }

@@ -283,6 +283,7 @@ describe('serializeStandardProgram', () => {
       ignoreRainSensor: false,
       daysRun: ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
       standardProgramDayPattern: 'interval',
+      dayPattern: null,
       periodicity: { period: 2, seriesStart: { timestamp: 1750914000 } },
       timeRange: { validFrom: null, validTo: null },
       conditionalWateringAdjustments: [{ id: 17, label: 'Vacation' }],
