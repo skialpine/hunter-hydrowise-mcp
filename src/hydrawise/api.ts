@@ -61,6 +61,7 @@ import {
   UPDATE_ZONE_NOTE_MUTATION,
   WAKE_CONTROLLER_MUTATION,
   CONTROLLER_SCHEDULE_QUERY,
+  WATER_SAVING_SUMMARY_QUERY,
   WATERING_REPORT_QUERY,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
@@ -89,6 +90,8 @@ import {
   type ProgramStartTimeWritable,
   type RunEventType,
   type RunSummaryDetails,
+  type WaterSavingPeriod,
+  type WaterSavingSummaryRead,
   type SensorCreatePayload,
   type SensorModelCategoryRead,
   type SensorModelRead,
@@ -151,6 +154,11 @@ export interface NotePayload {
 // Single source of truth for the run-summary period enum. Consumed by the MCP
 // tool layer's Zod schemas via `z.enum(RUN_SUMMARY_PERIODS)`.
 export const RUN_SUMMARY_PERIODS = ['CURRENT_WEEK', 'WEEK', 'MONTH', 'YEAR'] as const;
+
+// Single source of truth for the water-saving-summary period enum. Uses ReportingPeriodEnum
+// from the live schema (WEEK/MONTH/QUARTER/YEAR — no CURRENT_WEEK unlike ZoneRunSummary).
+export { WATER_SAVING_PERIODS } from './queries.js';
+export type { WaterSavingPeriod } from './queries.js';
 export type RunSummaryPeriod = (typeof RUN_SUMMARY_PERIODS)[number];
 
 export type RunSummaryArgs =
@@ -704,6 +712,34 @@ export class HydrawiseApi {
     });
     if (!data.zone) throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
     return data.zone.runSummary?.annual ?? null;
+  }
+
+  async getWaterSavingSummary(
+    controllerId: number,
+    year: number,
+    period: WaterSavingPeriod,
+    periodNumber?: number,
+  ): Promise<WaterSavingSummaryRead | null> {
+    const data = await this.client.query<{
+      controller: {
+        reports: {
+          overviews: {
+            periodSummary: {
+              details: { waterSavingSummary: WaterSavingSummaryRead } | null;
+            } | null;
+          } | null;
+        } | null;
+      } | null;
+    }>(WATER_SAVING_SUMMARY_QUERY, {
+      controllerId,
+      year,
+      period,
+      periodNumber: periodNumber ?? null,
+    });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return data.controller.reports?.overviews?.periodSummary?.details?.waterSavingSummary ?? null;
   }
 
   private async dispatchWateringProgram(

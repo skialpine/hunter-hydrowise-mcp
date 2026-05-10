@@ -13,7 +13,7 @@ import {
 
 function makeMinimalSnapshot(overrides: Partial<SnapshotForRecipe['controller']> = {}): SnapshotForRecipe {
   return {
-    snapshot_version: 7,
+    snapshot_version: 8,
     controller: {
       id: 317416,
       program_mode: 'STANDARD',

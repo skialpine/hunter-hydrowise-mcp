@@ -97,9 +97,11 @@ export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
   'minutes', 'days',
   // Reporting run-summary period range parameters (calendar units, not physical measurements)
   'start_week', 'end_week', 'start_month', 'end_month', 'start_year', 'end_year', 'year',
-  // Controller status — unit depends on account locale (gallons or liters); no fixed-unit suffix possible
-  'accumulated_water_savings',
 ]);
+
+export function inferWaterVolumeUnit(country: string | null | undefined): 'gallons' | 'liters' {
+  return country === 'US' ? 'gallons' : 'liters';
+}
 
 // Several Hydrawise list types declare nullable members ([Expander], [Module], [ZoneNote]!, [ControllerNote]!, [ExpanderFirmware]); strip nulls so per-element serializers can be null-blind. Don't "simplify" to `arr ?? []` — runtime nulls would crash with "Cannot read properties of null".
 export function nonNull<T>(arr: (T | null)[] | null | undefined): T[] {
@@ -144,10 +146,12 @@ export function serializeController(controller: Controller): Record<string, unkn
     // returns null for the status block.
     status_summary: controller.status?.summary ?? null,
     status_icon: controller.status?.icon ?? null,
-    // Unit is account-preference-dependent (gallons for US, liters elsewhere). The schema returns a bare
-    // Int without a unit envelope, so we cannot determine the unit at serialization time. The field name
-    // intentionally omits a unit suffix; it is whitelisted in IDENTIFIER_WHITELIST.
-    accumulated_water_savings: controller.status?.accumulatedWaterSavings ?? null,
+    // Unit inferred from controller location country (US → gallons, else liters). The upstream schema
+    // returns a bare Int! with no unit envelope; country inference is the best available signal.
+    accumulated_water_savings: {
+      value: controller.status?.accumulatedWaterSavings ?? null,
+      unit: inferWaterVolumeUnit(controller.location?.country),
+    },
     master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
     expanders: nonNull(controller.expanders).map(serializeExpander),
     modules: nonNull(controller.hardware?.modules).map(serializeModule),

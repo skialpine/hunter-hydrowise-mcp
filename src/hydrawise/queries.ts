@@ -1571,6 +1571,35 @@ export const REMOVE_WATERING_PROGRAM_MUTATION = /* GraphQL */ `
   }
 `;
 
+// Water saving summary (period-scoped)
+
+export const WATER_SAVING_PERIODS = ['WEEK', 'MONTH', 'QUARTER', 'YEAR'] as const;
+export type WaterSavingPeriod = (typeof WATER_SAVING_PERIODS)[number];
+
+export interface WaterSavingSummaryRead {
+  normalDuration: number;
+  scheduledDuration: number;
+}
+
+export const WATER_SAVING_SUMMARY_QUERY = /* GraphQL */ `
+  query WaterSavingSummary($controllerId: Int!, $year: Int!, $period: ReportingPeriodEnum!, $periodNumber: Int) {
+    controller(controllerId: $controllerId) {
+      reports {
+        overviews {
+          periodSummary(year: $year, period: $period, periodNumber: $periodNumber) {
+            details {
+              waterSavingSummary {
+                normalDuration
+                scheduledDuration
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Reporting
 
 export interface ScheduledZoneRun {

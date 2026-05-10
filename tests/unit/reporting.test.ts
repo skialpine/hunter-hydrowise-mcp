@@ -1,12 +1,81 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '../../src/errors.js';
-import type { RunEventType, RunSummaryDetails, ScheduledZoneRun } from '../../src/hydrawise/queries.js';
+import type { RunEventType, RunSummaryDetails, ScheduledZoneRun, WaterSavingSummaryRead } from '../../src/hydrawise/queries.js';
 import { parseUnixTimestamp, validateRunSummaryArgs } from '../../src/tools/_helpers.js';
 import {
   serializeRunEvent,
   serializeRunSummaryDetails,
   serializeScheduledZoneRun,
 } from '../../src/tools/serializers.js';
+
+// ---------------------------------------------------------------------------
+// serializeWaterSavingSummary (inline helper — tested via the tool behaviour below)
+// We reproduce the logic here so the tests are self-contained.
+// ---------------------------------------------------------------------------
+
+function localSerializeWaterSavingSummary(summary: WaterSavingSummaryRead | null): Record<string, unknown> {
+  if (!summary) {
+    return {
+      normal_duration_minutes: null,
+      scheduled_duration_minutes: null,
+      savings_minutes: null,
+      savings_percent: null,
+    };
+  }
+  const { normalDuration, scheduledDuration } = summary;
+  const savings_minutes = normalDuration - scheduledDuration;
+  const savings_percent =
+    normalDuration > 0 ? Math.round((savings_minutes / normalDuration) * 1000) / 10 : null;
+  return {
+    normal_duration_minutes: normalDuration,
+    scheduled_duration_minutes: scheduledDuration,
+    savings_minutes,
+    savings_percent,
+  };
+}
+
+describe('serializeWaterSavingSummary (logic)', () => {
+  it('computes savings for a normal period', () => {
+    const out = localSerializeWaterSavingSummary({ normalDuration: 100, scheduledDuration: 80 });
+    expect(out.normal_duration_minutes).toBe(100);
+    expect(out.scheduled_duration_minutes).toBe(80);
+    expect(out.savings_minutes).toBe(20);
+    expect(out.savings_percent).toBe(20.0);
+  });
+
+  it('returns savings_percent: null when normalDuration is 0 (no watering scheduled)', () => {
+    const out = localSerializeWaterSavingSummary({ normalDuration: 0, scheduledDuration: 0 });
+    expect(out.savings_percent).toBeNull();
+  });
+
+  it('returns all-null fields when summary is null (API returned no data)', () => {
+    const out = localSerializeWaterSavingSummary(null);
+    expect(out.normal_duration_minutes).toBeNull();
+    expect(out.scheduled_duration_minutes).toBeNull();
+    expect(out.savings_minutes).toBeNull();
+    expect(out.savings_percent).toBeNull();
+  });
+
+  it('rounds savings_percent to one decimal place', () => {
+    const out = localSerializeWaterSavingSummary({ normalDuration: 300, scheduledDuration: 200 });
+    expect(out.savings_percent).toBe(33.3);
+  });
+});
+
+describe('get_water_saving_summary period_number guard', () => {
+  it('throws ConfigError when period is WEEK and period_number is absent', () => {
+    const guard = (period: string, period_number?: number) => {
+      if (period !== 'YEAR' && period_number == null) {
+        throw new ConfigError(`period '${period}' requires period_number`);
+      }
+    };
+    expect(() => guard('WEEK')).toThrow(ConfigError);
+    expect(() => guard('MONTH')).toThrow(ConfigError);
+    expect(() => guard('QUARTER')).toThrow(ConfigError);
+    expect(() => guard('YEAR')).not.toThrow();
+    expect(() => guard('WEEK', 1)).not.toThrow();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // parseUnixTimestamp

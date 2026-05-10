@@ -158,7 +158,7 @@ export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
 
   // NOTE: The v5-compatibility guard below is intentionally unreachable in all current callers.
   // buildRestoreCaveats is called from backup.ts at capture time (always passes a freshly-built
-  // v7 snapshot) and from unit tests (all fixtures hardcode snapshot_version: 7), so
+  // v8 snapshot) and from unit tests (all fixtures hardcode snapshot_version: 8), so
   // snapshot_version < 6 can never be true here. The guard is retained so that any future
   // caller that passes an older snapshot gets the warning rather than silently proceeding.
   // The user-facing v5 incompatibility block lives in the restore-irrigation-backup skill

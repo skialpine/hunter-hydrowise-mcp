@@ -14,6 +14,7 @@ import type {
   ZoneRichRead,
 } from '../../src/hydrawise/queries.js';
 import {
+  inferWaterVolumeUnit,
   serializeAdvancedProgram,
   serializeAdvancedProgramReference,
   serializeController,
@@ -612,6 +613,28 @@ describe('serializeZoneSettings — advanced_program field', () => {
 });
 
 // ---------------------------------------------------------------------------
+// inferWaterVolumeUnit
+// ---------------------------------------------------------------------------
+
+describe('inferWaterVolumeUnit', () => {
+  it('returns gallons for US', () => {
+    expect(inferWaterVolumeUnit('US')).toBe('gallons');
+  });
+
+  it('returns liters for AU', () => {
+    expect(inferWaterVolumeUnit('AU')).toBe('liters');
+  });
+
+  it('returns liters for null', () => {
+    expect(inferWaterVolumeUnit(null)).toBe('liters');
+  });
+
+  it('returns liters for undefined', () => {
+    expect(inferWaterVolumeUnit(undefined)).toBe('liters');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // serializeController
 // ---------------------------------------------------------------------------
 
@@ -651,7 +674,24 @@ describe('serializeController', () => {
     expect(out.hibernate_status).toBe(true);
     expect(out.status_summary).toBe('Sleeping');
     expect(out.status_icon).toBe('moon.png');
-    expect(out.accumulated_water_savings).toBe(250);
+    // accumulated_water_savings is wrapped as {value, unit} (unit inferred from location.country)
+    expect(out.accumulated_water_savings).toEqual({ value: 250, unit: 'liters' });
+  });
+
+  it('emits gallons unit for US controllers', () => {
+    const out = serializeController({
+      ...baseController,
+      location: {
+        id: 1,
+        coordinates: null,
+        address: '123 Main St',
+        country: 'US',
+        state: 'CO',
+        locality: 'Denver',
+      },
+      status: { online: true, summary: 'All good!', icon: 'ok.png', accumulatedWaterSavings: 100 },
+    });
+    expect(out.accumulated_water_savings).toEqual({ value: 100, unit: 'gallons' });
   });
 
   it('serializes non-hibernated controller with hibernate_status: false', () => {
@@ -659,20 +699,20 @@ describe('serializeController', () => {
     expect(out.hibernate_status).toBe(false);
     expect(out.status_summary).toBe('All good!');
     expect(out.status_icon).toBe('ok.png');
-    expect(out.accumulated_water_savings).toBe(100);
+    expect(out.accumulated_water_savings).toEqual({ value: 100, unit: 'liters' });
   });
 
   // Guard against runtime null on controller.status (schema says !, but the project has seen
   // !-declared fields return null — e.g. Zone.status.lastRun). All status-derived fields must
   // be null, not a TypeError crash.
-  it('emits null status fields when controller.status is null at runtime', () => {
+  it('emits null value inside {value, unit} when controller.status is null at runtime', () => {
     const out = serializeController({
       ...baseController,
       status: null as unknown as Controller['status'],
     });
     expect(out.status_summary).toBeNull();
     expect(out.status_icon).toBeNull();
-    expect(out.accumulated_water_savings).toBeNull();
+    expect(out.accumulated_water_savings).toEqual({ value: null, unit: 'liters' });
   });
 
   // Task 5.2: null-path (a) — settings parent is null (older firmware)

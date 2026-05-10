@@ -230,12 +230,12 @@ async function callTool(app: ReturnType<typeof makeApp>, toolName: string, args:
 }
 
 describe('dump_controller_snapshot v6', () => {
-  it('returns snapshot_version 7', async () => {
+  it('returns snapshot_version 8', async () => {
     const app = makeApp();
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBeFalsy();
     const snap = JSON.parse(resp.result!.content[0]!.text) as { snapshot_version: number };
-    expect(snap.snapshot_version).toBe(7);
+    expect(snap.snapshot_version).toBe(8);
   });
 
   it('controller block includes location, time_zone, master_valve, expanders, modules, run_time_groups, controller_notes, device_id', async () => {

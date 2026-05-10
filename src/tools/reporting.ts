@@ -1,9 +1,32 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { RUN_SUMMARY_PERIODS, type HydrawiseApi } from '../hydrawise/api.js';
+import { ConfigError } from '../errors.js';
+import { RUN_SUMMARY_PERIODS, WATER_SAVING_PERIODS, type HydrawiseApi } from '../hydrawise/api.js';
+import type { WaterSavingSummaryRead } from '../hydrawise/queries.js';
 import type { Logger } from '../logger.js';
 import { jsonResult, parseUnixTimestamp, runTool, validateRunSummaryArgs } from './_helpers.js';
 import { serializeRunEvent, serializeRunSummaryDetails, serializeScheduledZoneRun } from './serializers.js';
+
+function serializeWaterSavingSummary(summary: WaterSavingSummaryRead | null): Record<string, unknown> {
+  if (!summary) {
+    return {
+      normal_duration_minutes: null,
+      scheduled_duration_minutes: null,
+      savings_minutes: null,
+      savings_percent: null,
+    };
+  }
+  const { normalDuration, scheduledDuration } = summary;
+  const savings_minutes = normalDuration - scheduledDuration;
+  const savings_percent =
+    normalDuration > 0 ? Math.round((savings_minutes / normalDuration) * 1000) / 10 : null;
+  return {
+    normal_duration_minutes: normalDuration,
+    scheduled_duration_minutes: scheduledDuration,
+    savings_minutes,
+    savings_percent,
+  };
+}
 
 const ControllerIdInput = { controller_id: z.number().int() };
 const ZoneIdInput = { zone_id: z.number().int() };
@@ -91,6 +114,43 @@ export function registerReportingTools(server: McpServer, api: HydrawiseApi, log
           return jsonResult(serializeRunSummaryDetails(summary));
         },
         { logger, toolName: 'get_run_summary' },
+      ),
+  );
+
+  server.registerTool(
+    'get_water_saving_summary',
+    {
+      description:
+        'Return the period-scoped water savings report for a controller. ' +
+        'Reports normal_duration_minutes (what would have been delivered without predictive watering), ' +
+        'scheduled_duration_minutes (what was actually scheduled), savings_minutes (the delta), ' +
+        'and savings_percent. ' +
+        'period must be one of: WEEK, MONTH, QUARTER, YEAR (uses ReportingPeriodEnum — no CURRENT_WEEK). ' +
+        'period_number is required for WEEK (1-53), MONTH (1-12), and QUARTER (1-4); omit for YEAR. ' +
+        'Returns null fields when the controller has no reporting data for the period. ' +
+        'Note: water volume saved is not available through this schema path; use get_run_summary per zone for volume data. ' +
+        'This is distinct from accumulated_water_savings (lifetime counter) on get_controller.',
+      inputSchema: {
+        ...ControllerIdInput,
+        year: z.number().int().describe('Calendar year (e.g. 2026)'),
+        period: z.enum(WATER_SAVING_PERIODS).describe('Reporting period: WEEK | MONTH | QUARTER | YEAR'),
+        period_number: z
+          .number()
+          .int()
+          .optional()
+          .describe('Period number within the year (week 1-53, month 1-12, quarter 1-4). Required for WEEK, MONTH, QUARTER; omit for YEAR.'),
+      },
+    },
+    async ({ controller_id, year, period, period_number }) =>
+      runTool(
+        async () => {
+          if (period !== 'YEAR' && period_number == null) {
+            throw new ConfigError(`period '${period}' requires period_number`);
+          }
+          const summary = await api.getWaterSavingSummary(controller_id, year, period, period_number);
+          return jsonResult(serializeWaterSavingSummary(summary));
+        },
+        { logger, toolName: 'get_water_saving_summary' },
       ),
   );
 }

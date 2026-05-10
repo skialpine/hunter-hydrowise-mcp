@@ -181,6 +181,7 @@ describe('streamable HTTP transport', () => {
         'get_watering_report',
         'get_zone_run_history',
         'get_run_summary',
+        'get_water_saving_summary',
         // schedule reads
         'get_zone_scheduled_runs',
         'get_zone_next_run',

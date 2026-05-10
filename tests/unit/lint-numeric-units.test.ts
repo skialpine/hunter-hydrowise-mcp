@@ -26,6 +26,12 @@ function toolFiles(): Array<{ name: string; src: string }> {
     .map((f) => ({ name: f, src: readFileSync(resolve(TOOLS_DIR, f), 'utf8') }));
 }
 
+describe('IDENTIFIER_WHITELIST invariants', () => {
+  it('accumulated_water_savings is NOT in the whitelist (it is wrapped as {value, unit})', () => {
+    expect(IDENTIFIER_WHITELIST.has('accumulated_water_savings')).toBe(false);
+  });
+});
+
 describe('numeric field naming lint', () => {
   it('every z.number() Zod input in src/tools/*.ts has a unit suffix or is whitelisted', () => {
     const violations: string[] = [];
