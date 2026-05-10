@@ -15,20 +15,28 @@ import {
   serializeZone,
   serializeZoneSettings,
 } from './serializers.js';
+import {
+  buildRestoreCaveats,
+  buildRestoreRecipe,
+  type RestoreStep,
+  type SnapshotForRecipe,
+} from './restoreRecipe.js';
 import { jsonResult, runTool } from './_helpers.js';
 
-// Snapshot version bumped to 4 with ADVANCED-mode program capture: controller.advanced_programs[]
-// (full inlined AdvancedProgram details — id, advanced_program_id, scope, watering_frequency,
-// run_time_group, applies_to_zones) for ADVANCED-mode controllers, plus per-zone advanced_program
-// reference inside settings. Combined with v3's sensor capture and v2's full STANDARD-mode coverage,
-// v4 is the first restore-complete snapshot for both controller modes.
+// Snapshot version bumped to 5 with embedded restore choreography: top-level
+// _restore_recipe (ordered list of {tool, args, depends_on, notes} steps that an AI
+// follows to apply the snapshot to a controller) and _caveats (string warnings about
+// known restore limitations: unreadable fields, custom-type id reallocation,
+// reusable schedule references, hardware re-wiring, unit-pref drift). The recipe is
+// computed at snapshot time as a pure function of the captured data — no live API
+// calls, no I/O — so the snapshot file is self-sufficient.
 //
-// Version history (informational; no migration logic — older snapshots are still readable, just
-// missing newer fields):
+// Version history (informational; no migration logic — older snapshots are still readable):
 //   v2: STANDARD-mode complete + watering triggers + zone settings, no sensors, no Advanced
 //   v3: + controller.sensors[] + per-zone sensors[] cross-references
-//   v4: + controller.advanced_programs[] + per-zone advanced_program reference (this version)
-export const SNAPSHOT_VERSION = 4;
+//   v4: + controller.advanced_programs[] + per-zone advanced_program reference
+//   v5: + _restore_recipe[] + _caveats[] at the envelope top level (this version)
+export const SNAPSHOT_VERSION = 5;
 const PACKAGE_VERSION = '0.3.0';
 
 // The runtime `snapshot_version` field is the version contract — the type alias is NOT.
@@ -38,11 +46,10 @@ const PACKAGE_VERSION = '0.3.0';
 // silently break consumers reading the dropped key. Bump SNAPSHOT_VERSION + this
 // interface together; consumers gate behavior on the runtime number.
 //
-// `advanced_programs` is optional — STANDARD-mode controllers omit it (or emit empty []);
-// ADVANCED-mode controllers populate it with the inlined AdvancedProgram details. Per-zone
-// settings include an `advanced_program` reference only when the zone uses
-// AdvancedWateringSettings (ADVANCED-mode); STANDARD-mode zones get `advanced_program: null`.
-export interface ControllerSnapshotV4 {
+// `_restore_recipe` is always emitted (empty array on a controller with nothing to restore),
+// keeping the shape stable for AI consumers that don't want to special-case empty controllers.
+// `_caveats` is similarly always emitted (empty array if no warnings apply).
+export interface ControllerSnapshotV5 {
   snapshot_version: typeof SNAPSHOT_VERSION;
   captured_at: string;
   server_version: string;
@@ -55,6 +62,8 @@ export interface ControllerSnapshotV4 {
     sensors: Array<Record<string, unknown>>;
     advanced_programs: Array<Record<string, unknown>>;
   };
+  _restore_recipe: RestoreStep[];
+  _caveats: string[];
 }
 
 const Input = { controller_id: z.number().int() };
@@ -64,7 +73,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
     'dump_controller_snapshot',
     {
       description:
-        'Snapshot one controller as a versioned JSON document (snapshot_version: 4). Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, per-zone advanced_program reference for ADVANCED-mode zones, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (BOTH Standard AND Advanced are now inlined with full subtype-specific detail — Standard: start_times, days_run, periodicity, per-zone run-time groups; Advanced: scope, watering_frequency, run_time_group, applies_to_zones), program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED), seasonal adjustments, watering triggers (with units captured), sensors (controller.sensors[] with full model + input + zone-association detail; per-zone sensors[] denormalised cross-references), and advanced_programs (controller.advanced_programs[] — empty on STANDARD-mode, populated on ADVANCED with inlined AdvancedProgram details). Read-only; no mutations.',
+        'Snapshot one controller as a versioned JSON document (snapshot_version: 5). Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, per-zone advanced_program reference for ADVANCED-mode zones, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (BOTH Standard AND Advanced are now inlined with full subtype-specific detail), program start times per zone, seasonal adjustments, watering triggers (with units captured), sensors (controller.sensors[] with full detail; per-zone sensors[] denormalised cross-references), and advanced_programs (empty on STANDARD-mode, populated on ADVANCED with inlined AdvancedProgram details). The envelope additionally embeds `_restore_recipe` (an ordered list of {order, tool, args, depends_on, notes} restore steps the AI follows to apply this snapshot — preview each step, confirm with user, then execute) and `_caveats` (string warnings about known restore limitations: unreadable fields, custom-type id reallocation, reusable schedule references, hardware re-wiring, unit-pref drift). Use the .claude/skills/restore-irrigation-backup skill to orchestrate the restore. Read-only; no mutations.',
       inputSchema: Input,
     },
     async ({ controller_id }) =>
@@ -178,7 +187,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             };
           });
 
-          const snapshot: ControllerSnapshotV4 = {
+          const baseEnvelope: Omit<ControllerSnapshotV5, '_restore_recipe' | '_caveats'> = {
             snapshot_version: SNAPSHOT_VERSION,
             captured_at: new Date().toISOString(),
             server_version: PACKAGE_VERSION,
@@ -195,6 +204,24 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
               // key existing — convention matches sensors[] above.
               advanced_programs: advancedProgramsInlined,
             },
+          };
+
+          // Compute the restore recipe + caveats as pure functions of the assembled
+          // snapshot. The recipe is the AI's playbook for applying this snapshot to a
+          // controller; the caveats surface known restore-side limitations that the
+          // recipe can't encode mechanically (unit-pref drift, custom-type id
+          // reallocation, etc.). Both are always emitted (empty arrays if nothing
+          // applies) so consumers don't have to special-case missing keys.
+          // The cast to SnapshotForRecipe narrows the envelope's Record-typed fields
+          // — the recipe builder reads only the fields it needs and treats the rest
+          // as opaque.
+          const recipe = buildRestoreRecipe(baseEnvelope as unknown as SnapshotForRecipe);
+          const caveats = buildRestoreCaveats(baseEnvelope as unknown as SnapshotForRecipe);
+
+          const snapshot: ControllerSnapshotV5 = {
+            ...baseEnvelope,
+            _restore_recipe: recipe,
+            _caveats: caveats,
           };
           return jsonResult(snapshot);
         },

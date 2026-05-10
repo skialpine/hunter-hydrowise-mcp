@@ -124,9 +124,12 @@ Backup:
 | --- | --- | --- |
 | `dump_controller_snapshot` | `controller_id` | Versioned JSON envelope `{ snapshot_version, captured_at, server_version, user, controller: { ..., zones, programs, seasonal_adjustments, watering_triggers } }` |
 
-## Backup
+## Backup and restore
 
-`dump_controller_snapshot(controller_id)` walks one controller and returns a single JSON document with the user reference, controller header, zones with writable settings, programs (Standard/Advanced via the `Program` interface), program start times per zone, seasonal adjustments, and watering triggers.
+`dump_controller_snapshot(controller_id)` walks one controller and returns a single versioned JSON document (`snapshot_version: 5`) with everything needed to restore: user reference, controller header, zones with writable settings, programs (Standard + Advanced inlined with full subtype detail), program start times per zone, seasonal adjustments, watering triggers (with units captured), sensors (with custom-type detail), and per-zone sensor + advanced-program cross-references. The envelope additionally embeds:
+
+- **`_restore_recipe`** — an ordered list of `{ order, tool, args, depends_on, notes? }` steps that an AI follows to apply the snapshot to a controller. Each step is a pre-built MCP tool call (e.g. `update_zone_settings` with the captured zone state). Dependencies between steps (e.g. `create_sensor` depends on the matching `create_custom_sensor_type`) are encoded in `depends_on`.
+- **`_caveats`** — human-readable warnings about known restore limitations specific to this snapshot (unit-pref drift between capture and restore, custom-sensor-type id reallocation, reusable-schedule references that may have been removed, hardware re-wiring out-of-band, etc.).
 
 The server never writes to disk. Persist the snapshot externally — typical patterns:
 
@@ -135,6 +138,15 @@ The server never writes to disk. Persist the snapshot externally — typical pat
 - **External cron**: shell pipeline like `curl ... dump_controller_snapshot ... > ~/backups/$(date -I).json`.
 
 For a multi-controller account, call `dump_controller_snapshot` once per `controller_id`.
+
+### Skill-driven workflows
+
+This repo ships two Claude Code skills in `.claude/skills/` that orchestrate the full workflows. They're auto-discovered when you open the project in Claude Code:
+
+- **`capture-irrigation-snapshot`** — Triggered by phrases like "back up my irrigation" or "snapshot my controller". Calls `dump_controller_snapshot`, writes the JSON to `snapshots/<name>-<id>-<ISO>.json`, and ALSO captures the watering-report delta since the last capture into `snapshots/history/<id>-<from>_to_<until>.json`. The history files build permanent multi-year coverage that survives Hydrawise's ~1-year report retention.
+- **`restore-irrigation-backup`** — Triggered by phrases like "restore my irrigation backup" or "apply this snapshot". Loads the snapshot file, verifies the target controller, presents `_caveats` for acknowledgement, and walks `_restore_recipe` step-by-step: previewing each mutation, asking for confirmation, then applying. Fail-fast on errors. Recommends capturing a fresh "savepoint" snapshot first so partial-restore failures are recoverable.
+
+There is intentionally no monolithic `restore_from_backup` MCP tool — restore is the AI's choreography of `update_*` / `create_*` calls gated by `preview: true` confirmation. The recipe is the playbook; the skill is the executor.
 
 ## Schedule editing
 

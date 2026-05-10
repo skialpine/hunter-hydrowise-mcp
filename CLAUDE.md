@@ -105,11 +105,13 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 - `create_watering_program`, `update_watering_program`, `delete_watering_program`
 
 ### Backup — `src/tools/backup.ts` (read-only)
-- `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 4`). Captures: user; controller header (id, **device_id**, model, hardware, **location**, **time_zone**, **master_valve**, **expanders**, **modules**, **run_time_groups** catalog, **controller_notes**); zones with their writable settings (cycle/soak, monitoring observed values **with units preserved**, **master_valve_override**, **zone_notes**, **per-zone sensor cross-references**, **per-zone `advanced_program` reference for ADVANCED-mode zones**, plus a `_unreadable_fields` array listing writable-but-not-readable field names); programs (BOTH Standard AND Advanced are now **inlined with full subtype-specific detail** — Standard: start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments; Advanced: scope, zone_specific, advanced_program_id, watering_frequency, run_time_group, applies_to_zones); program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED); seasonal adjustments; watering triggers (with units captured per LocalizedValueType field); **`controller.sensors[]`** with each sensor's full configuration plus per-zone `sensors: [{id, name}]` denormalised cross-references; **`controller.advanced_programs[]`** with full inlined AdvancedProgram details (empty on STANDARD-mode, populated on ADVANCED). No telemetry or run-event history.
-  - **NOT yet covered (deferred to later phases):**
-    - **Restore recipe / caveats** — Phase 4 (`add-restore-guidance`). The snapshot is currently restoration-data only; the AI orchestrating restore today reasons about ordering and conflicts unaided.
-  - The snapshot is now **restore-complete for BOTH STANDARD and ADVANCED-mode controllers** (sensors restorable via `irrigation-sensors` capability; ADVANCED-mode schedules restorable via `update_zone_settings` + `create/update_watering_program` for the referenced WateringProgram subtype). ADVANCED-mode reads have NOT yet been validated against a real ADVANCED-mode account — see the gotchas section.
-  - **Snapshot version history**: v2 lacked sensors; v3 adds `controller.sensors[]` and per-zone `sensors[]` cross-references; v4 adds `controller.advanced_programs[]` and per-zone `settings.advanced_program` reference. The version field is informational — there is no migration logic; older snapshots are still readable, just missing the newer fields.
+- `dump_controller_snapshot` — versioned JSON snapshot (`snapshot_version: 5`). Captures: user; controller header (id, **device_id**, model, hardware, **location**, **time_zone**, **master_valve**, **expanders**, **modules**, **run_time_groups** catalog, **controller_notes**); zones with their writable settings (cycle/soak, monitoring observed values **with units preserved**, **master_valve_override**, **zone_notes**, **per-zone sensor cross-references**, **per-zone `advanced_program` reference for ADVANCED-mode zones**, plus a `_unreadable_fields` array listing writable-but-not-readable field names); programs (BOTH Standard AND Advanced are **inlined with full subtype-specific detail**); program start times per zone; seasonal adjustments; watering triggers (with units captured); **`controller.sensors[]`** + per-zone `sensors[]` cross-references; **`controller.advanced_programs[]`** (empty on STANDARD-mode, populated on ADVANCED). The envelope additionally embeds **`_restore_recipe`** (ordered list of `{order, tool, args, depends_on, notes?}` restore steps the AI follows to apply this snapshot — preview each step, confirm with user, then execute) and **`_caveats`** (human-readable warnings about known restore limitations: unreadable fields, unit-pref drift, custom-type id reallocation, reusable schedule references, ADVANCED WateringProgram gaps, hardware re-wiring). Use the `restore-irrigation-backup` skill in `.claude/skills/` to orchestrate the restore. No telemetry or run-event history.
+  - The snapshot is now **restore-complete for BOTH STANDARD and ADVANCED-mode controllers**. ADVANCED-mode reads have NOT yet been validated against a real ADVANCED-mode account — see the gotchas section. The recipe builder explicitly skips Advanced programs (no createAdvancedProgram mutation) and emits per-zone steps that the skill workflow merges with live state for unreadable fields.
+  - **Snapshot version history** (informational; no migration logic — older snapshots are still readable, just missing newer fields):
+    - v2: STANDARD-mode complete + watering triggers + zone settings, no sensors, no Advanced
+    - v3: + `controller.sensors[]` + per-zone `sensors[]` cross-references
+    - v4: + `controller.advanced_programs[]` + per-zone `settings.advanced_program` reference
+    - v5: + `_restore_recipe` + `_caveats` at the envelope top level (current)
 
 ### Controller config — `src/tools/controllerConfig.ts` (PHYSICAL ACTION writes)
 - `update_location` — set address and/or coordinates; takes `controller_id` only (the upstream `deviceId` is resolved server-side from the controller, so a stale device_id from another snapshot can't accidentally mutate the wrong controller)
@@ -249,6 +251,27 @@ If a tool call fails with `Input validation error` for a field you know exists i
 ## Restore-from-backup is intentionally an AI workflow
 
 The snapshot tool (`dump_controller_snapshot`) is read-only and per-controller. There is **no** `restore_from_backup` tool — the design (in `openspec/changes/archive/2026-05-09-add-schedule-management/design.md`) calls for the AI to diff a snapshot against current state and call the matching `update_*` tool per category. This is the LLM-native pattern: the AI sees every field it's about to change rather than relying on an opaque server-side merge. Don't reintroduce a monolithic restore tool without revisiting that decision.
+
+### `_restore_recipe` and `_caveats` (snapshot v5+)
+
+The snapshot v5 envelope embeds two top-level blocks computed at capture time as pure functions of the snapshot data:
+
+- **`_restore_recipe`**: an ordered list of `{ order, tool, args, depends_on, notes? }` steps the AI executes to apply the snapshot. Each step's `tool` is the MCP tool name (e.g. `update_zone_settings`); `args` is the snake_case payload pre-built from snapshot data; `depends_on` references prior step `order` numbers (e.g. `create_sensor` depends on the matching `create_custom_sensor_type`); optional `notes` flags fields the AI must merge from live state (e.g. `update_zone_settings` step has nulls for unreadable fields like `watering_mode` — the AI fetches via `get_zone_settings` and merges).
+- **`_caveats`**: human-readable strings describing known restore limitations specific to this snapshot — unit-pref drift between capture and restore, custom-sensor-type id reallocation, reusable schedule-id references that may have been removed, ADVANCED-mode WateringProgram subtype gaps, hardware re-wiring out-of-band, etc.
+
+The recipe is **not** a server-side restore — it's a playbook. The AI follows it via the `restore-irrigation-backup` skill (in `.claude/skills/`): for each step, call `tool({ ...args, preview: true })` first, show the user the planned variables, get confirmation, then call again with `preview: false`. Fail-fast on first error. Capture a fresh "savepoint" snapshot first via the `capture-irrigation-snapshot` skill so partial-restore failures are recoverable.
+
+### Skills (in repo, ship to users automatically)
+
+`.claude/skills/restore-irrigation-backup/SKILL.md` — orchestrates the restore workflow. Triggered by phrases like "restore my irrigation backup", "apply this snapshot".
+
+`.claude/skills/capture-irrigation-snapshot/SKILL.md` — orchestrates capture: runs `dump_controller_snapshot`, writes the JSON to `snapshots/<name>-<id>-<ISO>.json`, and ALSO captures the watering-report delta since the last capture into `snapshots/history/<id>-<from>_to_<until>.json`. The history files build permanent multi-year coverage that survives Hydrawise's ~1-year report retention. Triggered by phrases like "back up my irrigation", "snapshot my controller".
+
+Both skills live in the repo so users who clone get them automatically. They can be copied to `~/.claude/skills/` if the user prefers personal scope.
+
+### Testing the recipe
+
+`tests/integration/snapshot-roundtrip.test.ts` exercises the round-trip: capture a snapshot from a fakeApi, then for each step in `_restore_recipe`, call the named tool with `preview: true` and assert the planned variables match. Catches: tool name typos, args shape drift, missing tools. The test deliberately skips `update_zone_settings` (which has documented nulls for unreadable fields the AI must merge) — that gap is asserted by the recipe builder's `notes` field, not by Zod-passing args.
 
 ## GraphQL schema source of truth
 
