@@ -593,3 +593,84 @@ describe('HydrawiseApi — sensor reads + mutations', () => {
     expect(await api.deleteCustomSensorType(999)).toBe(true);
   });
 });
+
+describe('HydrawiseApi — Advanced program reads', () => {
+  // Local query-only client (getAdvancedProgram is a pure read; no mutations needed).
+  function fakeQueryClient() {
+    const calls: Array<{ document: string; variables?: Variables }> = [];
+    let nextResult: unknown = null;
+    const client: HydrawiseClient = {
+      async query<TResult>(document: string, variables?: Variables): Promise<TResult> {
+        calls.push({ document, variables });
+        return nextResult as TResult;
+      },
+      async mutate() {
+        throw new Error('no mutations expected');
+      },
+      async mutateRaw() {
+        throw new Error('no mutations expected');
+      },
+    };
+    return { client, calls, setNextResult: (r: unknown) => { nextResult = r; } };
+  }
+
+  const fakeAdvancedReturn = {
+    __typename: 'AdvancedProgram' as const,
+    id: 6390999,
+    name: 'Lawn Smart',
+    appliesToZones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    schedulingMethod: { value: 3, label: 'Smart' },
+    monthlyWateringAdjustments: Array(12).fill(100),
+    zoneSpecific: false,
+    advancedProgramId: 99999,
+    scope: 'CUSTOMER' as const,
+    conditionalWateringAdjustments: [],
+    wateringFrequency: { label: 'Daily', description: 'Run every day', period: { value: 1, label: 'day' } },
+    runTimeGroup: { id: 12345, name: 'Default 15min', duration: 15 },
+  };
+
+  it('getAdvancedProgram dispatches PROGRAMS_FULL_QUERY with controllerId + includeZoneSpecific:true', async () => {
+    const harness = fakeQueryClient();
+    harness.setNextResult({ controller: { programs: [fakeAdvancedReturn] } });
+    const api = new HydrawiseApi(harness.client);
+    await api.getAdvancedProgram(317416, 6390999);
+    expect(harness.calls).toHaveLength(1);
+    expect(harness.calls[0]?.variables).toEqual({ controllerId: 317416, includeZoneSpecific: true });
+    expect(harness.calls[0]?.document).toContain('AdvancedProgram');
+  });
+
+  it('getAdvancedProgram returns the matching program when id and __typename match', async () => {
+    const harness = fakeQueryClient();
+    harness.setNextResult({ controller: { programs: [fakeAdvancedReturn] } });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.getAdvancedProgram(317416, 6390999);
+    expect(out?.id).toBe(6390999);
+    expect(out?.advancedProgramId).toBe(99999);
+  });
+
+  it('getAdvancedProgram returns null when the id exists but is a StandardProgram (wrong type)', async () => {
+    const harness = fakeQueryClient();
+    // The id matches but __typename says StandardProgram — must NOT mis-type the result.
+    harness.setNextResult({
+      controller: {
+        programs: [{ ...fakeAdvancedReturn, __typename: 'StandardProgram' }],
+      },
+    });
+    const api = new HydrawiseApi(harness.client);
+    expect(await api.getAdvancedProgram(317416, 6390999)).toBeNull();
+  });
+
+  it('getAdvancedProgram returns null when no matching id exists', async () => {
+    const harness = fakeQueryClient();
+    harness.setNextResult({ controller: { programs: [fakeAdvancedReturn] } });
+    const api = new HydrawiseApi(harness.client);
+    expect(await api.getAdvancedProgram(317416, 9999999)).toBeNull();
+  });
+
+  it('getAdvancedProgram throws HydrawiseNotFoundError when controller is null', async () => {
+    const harness = fakeQueryClient();
+    harness.setNextResult({ controller: null });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.getAdvancedProgram(317416, 6390999)).rejects.toThrow(HydrawiseNotFoundError);
+  });
+});

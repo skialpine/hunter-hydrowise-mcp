@@ -69,6 +69,7 @@ import {
   ZONE_RUN_SUMMARY_WEEKLY_QUERY,
   ZONE_SENSORS_QUERY,
   ZONES_QUERY,
+  type AdvancedProgramRead,
   type Controller,
   type ControllerNoteRead,
   type CustomSensorTypeCreatePayload,
@@ -337,6 +338,26 @@ export class HydrawiseApi {
     }
     const found = (data.controller.programs ?? []).find(
       (p) => p.id === programId && p.__typename === 'StandardProgram',
+    );
+    return found ?? null;
+  }
+
+  // Mirrors getStandardProgram for ADVANCED-mode programs. Both reuse PROGRAMS_FULL_QUERY
+  // (which selects fragments for both subtypes); the __typename filter ensures we only
+  // surface programs of the requested concrete type. A program-id-mismatch (e.g. the id
+  // exists but is a StandardProgram) returns null rather than mis-typing the result.
+  async getAdvancedProgram(
+    controllerId: number,
+    programId: number,
+  ): Promise<AdvancedProgramRead | null> {
+    const data = await this.client.query<{
+      controller: { programs: (AdvancedProgramRead & { __typename: string })[] | null } | null;
+    }>(PROGRAMS_FULL_QUERY, { controllerId, includeZoneSpecific: true });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    const found = (data.controller.programs ?? []).find(
+      (p) => p.id === programId && p.__typename === 'AdvancedProgram',
     );
     return found ?? null;
   }

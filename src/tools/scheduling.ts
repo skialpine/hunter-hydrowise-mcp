@@ -9,7 +9,9 @@ import {
   type WateringProgramWritable,
 } from '../hydrawise/queries.js';
 import {
+  serializeAdvancedProgram,
   serializeProgramStartTime,
+  serializeStandardProgram,
   serializeWateringTriggers,
   serializeZoneSettings,
 } from './serializers.js';
@@ -234,9 +236,13 @@ export function registerSchedulingTools(
     'get_program',
     {
       description:
-        'Return full detail for a single program. For Standard programs this includes start ' +
-        'times, day pattern, days run, monthly adjustments, periodicity, and per-zone run-time ' +
-        'groups (the "for X minutes" you see in the GUI).',
+        'Return full detail for a single program. Dispatches on program_type. ' +
+        'For Standard: start times, day pattern, days run, monthly adjustments, periodicity, ' +
+        'valid_from/to, and per-zone run-time groups (the "for X minutes" you see in the GUI). ' +
+        'For Advanced: scope, zone_specific, advanced_program_id, watering_frequency ' +
+        '(label/description/period), run_time_group reference, and applies_to_zones. ' +
+        'Note that Advanced programs do NOT carry start times here — those live per-zone via ' +
+        'list_program_start_times_for_zone.',
       inputSchema: {
         controller_id: z.number().int(),
         program_id: z.number().int(),
@@ -245,47 +251,29 @@ export function registerSchedulingTools(
     },
     async ({ controller_id, program_id, program_type }) =>
       wrap('get_program', async () => {
-        if (program_type !== 'Standard') {
-          throw new ConfigError(
-            `program_type=${program_type} is not yet supported by get_program; only Standard is implemented`,
-          );
+        // Dispatch on the discriminator. Both branches return null when the id exists
+        // but is the OTHER program type (e.g. requesting Advanced but the id is a
+        // StandardProgram) — surfaced as ConfigError so the caller distinguishes
+        // "no such id" from "wrong type".
+        if (program_type === 'Standard') {
+          const program = await api.getStandardProgram(controller_id, program_id);
+          if (!program) {
+            throw new ConfigError(
+              `Standard program ${program_id} not found on controller ${controller_id} ` +
+                '(check that program_type matches the program\'s actual type)',
+            );
+          }
+          return jsonResult(serializeStandardProgram(program));
         }
-        const program = await api.getStandardProgram(controller_id, program_id);
+        // program_type === 'Advanced'
+        const program = await api.getAdvancedProgram(controller_id, program_id);
         if (!program) {
           throw new ConfigError(
-            `program ${program_id} not found on controller ${controller_id}`,
+            `Advanced program ${program_id} not found on controller ${controller_id} ` +
+              '(check that program_type matches the program\'s actual type)',
           );
         }
-        return jsonResult({
-          id: program.id,
-          name: program.name,
-          program_type: 'Standard',
-          standard_program_day_pattern: program.standardProgramDayPattern,
-          days_run: program.daysRun,
-          start_times: program.startTimes,
-          ignore_rain_sensor: program.ignoreRainSensor,
-          monthly_watering_adjustments: program.monthlyWateringAdjustments,
-          scheduling_method: program.schedulingMethod,
-          periodicity: program.periodicity
-            ? {
-                period: program.periodicity.period,
-                series_start: program.periodicity.seriesStart?.value ?? null,
-              }
-            : null,
-          applies_to_zones: program.appliesToZones.map((z) => ({
-            id: z.id,
-            number: z.number.value,
-            name: z.name,
-          })),
-          // RunTimeGroup.duration is minutes; startZone's customRunDuration is seconds — don't conflate.
-          per_zone_run_times: program.applications.map((a) => ({
-            zone_id: a.zone.id,
-            zone_number: a.zone.number.value,
-            run_time_group_id: a.runTimeGroup.id,
-            run_time_group_name: a.runTimeGroup.name,
-            duration_minutes: a.runTimeGroup.duration,
-          })),
-        });
+        return jsonResult(serializeAdvancedProgram(program));
       }),
   );
 

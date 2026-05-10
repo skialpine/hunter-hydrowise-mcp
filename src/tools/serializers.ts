@@ -1,4 +1,6 @@
 import type {
+  AdvancedProgramRead,
+  AdvancedProgramReferenceRead,
   Controller,
   ControllerNoteRead,
   ExpanderRead,
@@ -200,6 +202,14 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
         }
       : null,
     zone_notes: nonNull(zone.zoneNotes).map(serializeNote),
+    // ADVANCED-mode zones expose a per-zone `advancedProgram` reference (the
+    // `... on AdvancedWateringSettings` fragment in ZONE_FULL_QUERY). On STANDARD-mode
+    // zones the fragment doesn't match, so the upstream returns null/undefined and we
+    // emit `null` here. Restore consumers gate on this field's presence to decide
+    // whether the zone needs Advanced-style schedule restoration.
+    advanced_program: zone.wateringSettings?.advancedProgram
+      ? serializeAdvancedProgramReference(zone.wateringSettings.advancedProgram)
+      : null,
     // Read schema doesn't expose these; caller must supply on update.
     watering_mode: null,
     global_master_valve: null,
@@ -449,5 +459,70 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
       run_time_group_name: a.runTimeGroup.name,
       duration_minutes: a.runTimeGroup.duration,
     })),
+  };
+}
+
+// =============================================================================
+// AdvancedProgram serializers (irrigation-scheduling, ADVANCED-mode)
+// =============================================================================
+
+// Full inlined shape for an AdvancedProgram entry. Companion to serializeStandardProgram;
+// both share `id`, `name`, `program_type`, `applies_to_zones`, `monthly_watering_adjustments`,
+// `scheduling_method`, `schedule_adjustment_ids` at the top level. AdvancedProgram-specific
+// fields (zone_specific, advanced_program_id, scope, watering_frequency, run_time_group)
+// follow.
+//
+// Note: AdvancedProgram does NOT carry start_times / days_run / day_pattern / periodicity /
+// timeRange like StandardProgram. The schedule-time data for ADVANCED-mode zones lives
+// per-zone via `zone.wateringSettings.programStartTimes` and the referenced WateringProgram
+// (Time/Smart/VSS) — emitted by the per-zone snapshot path, not here.
+export function serializeAdvancedProgram(p: AdvancedProgramRead): Record<string, unknown> {
+  return {
+    id: p.id,
+    name: p.name,
+    program_type: 'Advanced',
+    advanced_program_id: p.advancedProgramId,
+    scope: p.scope,
+    zone_specific: p.zoneSpecific,
+    monthly_watering_adjustments: p.monthlyWateringAdjustments,
+    scheduling_method: p.schedulingMethod?.value ?? null,
+    schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
+    // Flatten the ProgramWateringFrequency wrapper. WateringPeriodicity.{value, label} are
+    // both nullable per schema, so ?. them.
+    watering_frequency: {
+      label: p.wateringFrequency.label,
+      description: p.wateringFrequency.description,
+      period_value: p.wateringFrequency.period?.value ?? null,
+      period_label: p.wateringFrequency.period?.label ?? null,
+    },
+    // run_time_group is nullable on AdvancedProgram; surface as null when absent so the
+    // snapshot's null-not-omitted convention holds.
+    run_time_group: p.runTimeGroup
+      ? {
+          id: p.runTimeGroup.id,
+          name: p.runTimeGroup.name,
+          // Same units as StandardProgram per_zone_run_times.duration_minutes — minutes.
+          duration_minutes: p.runTimeGroup.duration,
+        }
+      : null,
+    applies_to_zones: p.appliesToZones.map((z) => ({
+      id: z.id,
+      number: z.number.value,
+      name: z.name,
+    })),
+  };
+}
+
+// Per-zone short reference to an AdvancedProgram. Embedded under each zone's snapshot
+// entry as `advanced_program: { id, name, advanced_program_id }` so a restore consumer
+// can correlate the zone with the controller-level advanced_programs[] list without
+// duplicating the full record on every zone.
+export function serializeAdvancedProgramReference(
+  p: AdvancedProgramReferenceRead,
+): Record<string, unknown> {
+  return {
+    id: p.id,
+    name: p.name,
+    advanced_program_id: p.advancedProgramId,
   };
 }

@@ -188,6 +188,10 @@ function makeApp(apiOverrides: Partial<HydrawiseApi> = {}) {
       { id: 6390589, name: 'Lawn', program_type: 'Standard', scheduling_method: 3, applies_to_zone_ids: [100] },
     ],
     getStandardProgram: async () => fakeStandardProgram,
+    // Default: no Advanced program details. Tests that include Advanced programs in their
+    // getPrograms fixture must override this — otherwise the snapshot's integrity check
+    // (Advanced thin entry must be fetchable as full Advanced) will throw.
+    getAdvancedProgram: async () => null,
     getProgramStartTimesForZone: async () => [],
     getSeasonalAdjustments: async () => [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
     getWateringTriggers: async () => fakeWateringTriggers,
@@ -227,13 +231,13 @@ async function callTool(app: ReturnType<typeof makeApp>, toolName: string, args:
   };
 }
 
-describe('dump_controller_snapshot v3', () => {
-  it('returns snapshot_version 3', async () => {
+describe('dump_controller_snapshot v4', () => {
+  it('returns snapshot_version 4', async () => {
     const app = makeApp();
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBeFalsy();
     const snap = JSON.parse(resp.result!.content[0]!.text) as { snapshot_version: number };
-    expect(snap.snapshot_version).toBe(3);
+    expect(snap.snapshot_version).toBe(4);
   });
 
   it('controller block includes location, time_zone, master_valve, expanders, modules, run_time_groups, controller_notes, device_id', async () => {
@@ -301,14 +305,35 @@ describe('dump_controller_snapshot v3', () => {
   });
 
   it('program_type discriminator is consistent between thin entries and inlined details', async () => {
-    // Two programs returned by list_programs: one Standard (will be inlined), one Advanced (stays thin).
-    // Both should report program_type using the same vocabulary ("Standard" | "Advanced") so a restore
-    // tool can key off the field uniformly without having to recognize __typename suffixes.
+    // Two programs returned by list_programs: one Standard, one Advanced. Both should
+    // be inlined (Standard via getStandardProgram, Advanced via getAdvancedProgram), and
+    // both should report program_type using the same vocabulary ("Standard" | "Advanced")
+    // so a restore tool can key off the field uniformly without having to recognise raw
+    // __typename suffixes.
+    const fakeAdvancedProgram = {
+      __typename: 'AdvancedProgram' as const,
+      id: 6390999,
+      name: 'Adv',
+      appliesToZones: [{ id: 100, number: { value: 1 }, name: 'Test Zone' }],
+      schedulingMethod: { value: 3, label: 'Smart' },
+      monthlyWateringAdjustments: Array(12).fill(100),
+      zoneSpecific: false,
+      advancedProgramId: 99999,
+      scope: 'CUSTOMER' as const,
+      conditionalWateringAdjustments: [],
+      wateringFrequency: {
+        label: 'Daily',
+        description: 'Run every day',
+        period: { value: 1, label: 'day' },
+      },
+      runTimeGroup: { id: 12345, name: 'Default', duration: 15 },
+    };
     const app = makeApp({
       getPrograms: async () => [
         { id: 6390589, name: 'Lawn', program_type: 'Standard', scheduling_method: 3, applies_to_zone_ids: [100] },
         { id: 6390999, name: 'Adv',  program_type: 'Advanced', scheduling_method: 3, applies_to_zone_ids: [100] },
       ],
+      getAdvancedProgram: async () => fakeAdvancedProgram,
     });
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     const snap = JSON.parse(resp.result!.content[0]!.text) as {
@@ -393,6 +418,88 @@ describe('dump_controller_snapshot v3', () => {
     // Per-zone sensors[] also empty — no controller-level sensor to denormalise from.
     for (const z of snap.controller.zones) {
       expect(z.sensors).toEqual([]);
+    }
+  });
+
+  it('ADVANCED-mode snapshot populates controller.advanced_programs[] and per-zone advanced_program reference', async () => {
+    const fakeAdvancedProgram = {
+      __typename: 'AdvancedProgram' as const,
+      id: 6390999,
+      name: 'Lawn Smart',
+      appliesToZones: [{ id: 100, number: { value: 1 }, name: 'Test Zone' }],
+      schedulingMethod: { value: 3, label: 'Smart' },
+      monthlyWateringAdjustments: Array(12).fill(100),
+      zoneSpecific: false,
+      advancedProgramId: 99999,
+      scope: 'CUSTOMER' as const,
+      conditionalWateringAdjustments: [],
+      wateringFrequency: { label: 'Daily', description: 'Run every day', period: { value: 1, label: 'day' } },
+      runTimeGroup: { id: 12345, name: 'Default 15min', duration: 15 },
+    };
+    // ADVANCED-mode zone: wateringSettings includes the advancedProgram reference (the
+    // `... on AdvancedWateringSettings` fragment matches at the GraphQL layer).
+    const advancedZoneFull = {
+      ...fakeZoneFull,
+      wateringSettings: {
+        fixedWateringAdjustment: 100,
+        cycleAndSoakSettings: null,
+        advancedProgram: { id: 6390999, name: 'Lawn Smart', advancedProgramId: 99999 },
+      },
+    };
+    const app = makeApp({
+      getController: async () => ({ ...fakeController, programMode: 'ADVANCED' }),
+      getZoneFull: async () => advancedZoneFull,
+      getPrograms: async () => [
+        { id: 6390999, name: 'Lawn Smart', program_type: 'Advanced', scheduling_method: 3, applies_to_zone_ids: [100] },
+      ],
+      getAdvancedProgram: async () => fakeAdvancedProgram,
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: {
+        program_mode: string;
+        advanced_programs: Array<Record<string, unknown>>;
+        zones: Array<{ id: number; settings: { advanced_program: Record<string, unknown> | null } }>;
+      };
+    };
+
+    // Controller-level advanced_programs[] is the canonical source — full inlined detail.
+    expect(snap.controller.program_mode).toBe('ADVANCED');
+    expect(snap.controller.advanced_programs).toHaveLength(1);
+    expect(snap.controller.advanced_programs[0]).toMatchObject({
+      id: 6390999,
+      name: 'Lawn Smart',
+      program_type: 'Advanced',
+      advanced_program_id: 99999,
+      scope: 'CUSTOMER',
+    });
+
+    // Per-zone advanced_program is the denormalised cross-reference ({id, name,
+    // advanced_program_id} only) — derived from zone.wateringSettings.advancedProgram,
+    // which got populated by the AdvancedWateringSettings fragment.
+    const zoneEntry = snap.controller.zones.find((z) => z.id === 100);
+    expect(zoneEntry?.settings.advanced_program).toEqual({
+      id: 6390999,
+      name: 'Lawn Smart',
+      advanced_program_id: 99999,
+    });
+  });
+
+  it('STANDARD-mode snapshot leaves controller.advanced_programs empty and per-zone advanced_program null', async () => {
+    // Default fake fixture is STANDARD-mode, no Advanced programs in getPrograms.
+    const app = makeApp();
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: {
+        advanced_programs: unknown[];
+        zones: Array<{ settings: { advanced_program: unknown } }>;
+      };
+    };
+    expect(snap.controller.advanced_programs).toEqual([]);
+    for (const z of snap.controller.zones) {
+      // Per-zone advanced_program is `null` (not omitted) — convention matches sensors.
+      expect(z.settings.advanced_program).toBeNull();
     }
   });
 });

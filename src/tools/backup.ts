@@ -4,6 +4,7 @@ import { HydrawiseAPIError } from '../errors.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
 import {
+  serializeAdvancedProgram,
   serializeController,
   serializeProgramStartTime,
   serializeSensor,
@@ -16,12 +17,18 @@ import {
 } from './serializers.js';
 import { jsonResult, runTool } from './_helpers.js';
 
-// Snapshot version bumped to 3 with sensor capture: controller.sensors[] (full sensor
-// records with model + input + zone-association) and per-zone sensors[] cross-references
-// (denormalised {id, name} for AI scanning convenience). Snapshot consumers can dispatch on
-// this number to handle older snapshots that lack these fields. The version is informational
-// — there is no migration path; a v2 snapshot is still readable, just missing sensor data.
-export const SNAPSHOT_VERSION = 3;
+// Snapshot version bumped to 4 with ADVANCED-mode program capture: controller.advanced_programs[]
+// (full inlined AdvancedProgram details — id, advanced_program_id, scope, watering_frequency,
+// run_time_group, applies_to_zones) for ADVANCED-mode controllers, plus per-zone advanced_program
+// reference inside settings. Combined with v3's sensor capture and v2's full STANDARD-mode coverage,
+// v4 is the first restore-complete snapshot for both controller modes.
+//
+// Version history (informational; no migration logic — older snapshots are still readable, just
+// missing newer fields):
+//   v2: STANDARD-mode complete + watering triggers + zone settings, no sensors, no Advanced
+//   v3: + controller.sensors[] + per-zone sensors[] cross-references
+//   v4: + controller.advanced_programs[] + per-zone advanced_program reference (this version)
+export const SNAPSHOT_VERSION = 4;
 const PACKAGE_VERSION = '0.3.0';
 
 // The runtime `snapshot_version` field is the version contract — the type alias is NOT.
@@ -30,7 +37,12 @@ const PACKAGE_VERSION = '0.3.0';
 // shape under the old name), and the next bump that actually drops a field would
 // silently break consumers reading the dropped key. Bump SNAPSHOT_VERSION + this
 // interface together; consumers gate behavior on the runtime number.
-export interface ControllerSnapshotV3 {
+//
+// `advanced_programs` is optional — STANDARD-mode controllers omit it (or emit empty []);
+// ADVANCED-mode controllers populate it with the inlined AdvancedProgram details. Per-zone
+// settings include an `advanced_program` reference only when the zone uses
+// AdvancedWateringSettings (ADVANCED-mode); STANDARD-mode zones get `advanced_program: null`.
+export interface ControllerSnapshotV4 {
   snapshot_version: typeof SNAPSHOT_VERSION;
   captured_at: string;
   server_version: string;
@@ -41,6 +53,7 @@ export interface ControllerSnapshotV3 {
     seasonal_adjustments: { factors: number[] };
     watering_triggers: Record<string, unknown> | null;
     sensors: Array<Record<string, unknown>>;
+    advanced_programs: Array<Record<string, unknown>>;
   };
 }
 
@@ -51,7 +64,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
     'dump_controller_snapshot',
     {
       description:
-        'Snapshot one controller as a versioned JSON document. Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (Standard programs are inlined with full schedule detail — start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments), program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED), seasonal adjustments, watering triggers (with units captured), and sensors (controller.sensors[] with full model + input + zone-association detail; per-zone sensors[] denormalised cross-references). Read-only; no mutations.',
+        'Snapshot one controller as a versioned JSON document (snapshot_version: 4). Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, per-zone advanced_program reference for ADVANCED-mode zones, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (BOTH Standard AND Advanced are now inlined with full subtype-specific detail — Standard: start_times, days_run, periodicity, per-zone run-time groups; Advanced: scope, watering_frequency, run_time_group, applies_to_zones), program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED), seasonal adjustments, watering triggers (with units captured), sensors (controller.sensors[] with full model + input + zone-association detail; per-zone sensors[] denormalised cross-references), and advanced_programs (controller.advanced_programs[] — empty on STANDARD-mode, populated on ADVANCED with inlined AdvancedProgram details). Read-only; no mutations.',
       inputSchema: Input,
     },
     async ({ controller_id }) =>
@@ -88,30 +101,52 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             api.getControllerSensors(controller_id),
           ]);
 
-          // Inline StandardProgram details for every Standard program. ADVANCED programs are returned as the thin list entry only — Phase 3 will dispatch on programMode and add Advanced inlining.
-          const standardPrograms = await Promise.all(
+          // Inline full program details — dispatch on program_type. Standard programs use
+          // serializeStandardProgram; Advanced programs use serializeAdvancedProgram. Other
+          // __typename values (none expected today) fall through to the thin list entry.
+          //
+          // The integrity check for both subtypes: getPrograms reported this program as type X,
+          // so the matching getXProgram MUST return non-null. A null means upstream lied
+          // (rename mid-fetch? race?) — fail the snapshot rather than silently downgrade to a
+          // thin entry the AI would mistake for "this program has no schedule details."
+          // HydrawiseAPIError categorises as api_error (upstream contract violation) rather
+          // than internal_error (our bug).
+          const inlinedDetails = await Promise.all(
             programsList.map(async (p) => {
-              if (p.program_type !== 'Standard') return null;
-              const full = await api.getStandardProgram(controller_id, p.id);
-              if (!full) {
-                // Snapshot integrity invariant: every program returned by getPrograms with
-                // program_type 'Standard' must be fetchable via getStandardProgram. A null
-                // here means upstream lied (race? renamed __typename?) — fail the snapshot
-                // rather than silently downgrade to a thin entry the AI would mistake for
-                // "this program has no schedule details." HydrawiseAPIError categorizes this
-                // as api_error (upstream contract violation), not internal_error (our bug).
-                throw new HydrawiseAPIError(
-                  `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
-                );
+              if (p.program_type === 'Standard') {
+                const full = await api.getStandardProgram(controller_id, p.id);
+                if (!full) {
+                  throw new HydrawiseAPIError(
+                    `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
+                  );
+                }
+                return { kind: 'standard' as const, payload: serializeStandardProgram(full) };
               }
-              return serializeStandardProgram(full);
+              if (p.program_type === 'Advanced') {
+                const full = await api.getAdvancedProgram(controller_id, p.id);
+                if (!full) {
+                  throw new HydrawiseAPIError(
+                    `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Advanced but getAdvancedProgram returned null. The snapshot would be incomplete.`,
+                  );
+                }
+                return { kind: 'advanced' as const, payload: serializeAdvancedProgram(full) };
+              }
+              return null;
             }),
           );
 
+          // controller.programs[] continues to mix Standard + Advanced inlined entries
+          // (with thin fallback for unknown subtypes); controller.advanced_programs[] is
+          // the dedicated Advanced-only list per the spec, useful for AI consumers that
+          // want to scan just one subtype without filtering.
           const inlinedPrograms = programsList.map((thin, i) => {
-            const full = standardPrograms[i];
-            return full ?? thin;
+            const detail = inlinedDetails[i];
+            return detail?.payload ?? thin;
           });
+
+          const advancedProgramsInlined = inlinedDetails
+            .filter((d): d is { kind: 'advanced'; payload: Record<string, unknown> } => d?.kind === 'advanced')
+            .map((d) => d.payload);
 
           const settingsByZone = new Map(zoneSettings.map((s) => [s.zone_id, s.settings]));
           const startsByZone = new Map(startTimesByZone.map((s) => [s.zone_id, s.start_times]));
@@ -129,7 +164,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             };
           });
 
-          const snapshot: ControllerSnapshotV3 = {
+          const snapshot: ControllerSnapshotV4 = {
             snapshot_version: SNAPSHOT_VERSION,
             captured_at: new Date().toISOString(),
             server_version: PACKAGE_VERSION,
@@ -141,6 +176,10 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
               seasonal_adjustments: { factors: seasonalAdjustments },
               watering_triggers: wateringTriggers ? serializeWateringTriggers(wateringTriggers) : null,
               sensors: controllerSensors.map(serializeSensor),
+              // Empty array on STANDARD-mode controllers (no Advanced programs); populated
+              // on ADVANCED-mode. Always emitted (not omitted) so consumers can rely on the
+              // key existing — convention matches sensors[] above.
+              advanced_programs: advancedProgramsInlined,
             },
           };
           return jsonResult(snapshot);

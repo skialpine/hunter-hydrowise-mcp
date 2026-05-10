@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  AdvancedProgramRead,
   ControllerNoteRead,
   ExpanderRead,
   LocationRead,
@@ -12,6 +13,8 @@ import type {
   ZoneRichRead,
 } from '../../src/hydrawise/queries.js';
 import {
+  serializeAdvancedProgram,
+  serializeAdvancedProgramReference,
   serializeExpander,
   serializeLocation,
   serializeNote,
@@ -455,5 +458,130 @@ describe('serializeSensorZoneRefsForZone', () => {
       { id: 5001, name: 'Front yard rain' },
       { id: 5002, name: 'Soil' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AdvancedProgram serializers (irrigation-scheduling, ADVANCED-mode)
+// ---------------------------------------------------------------------------
+
+const fakeAdvancedProgram: AdvancedProgramRead = {
+  __typename: 'AdvancedProgram',
+  id: 6390999,
+  name: 'Lawn Smart',
+  appliesToZones: [
+    { id: 100, number: { value: 1 }, name: 'Front Lawn' },
+    { id: 101, number: { value: 2 }, name: 'Back Lawn' },
+  ],
+  schedulingMethod: { value: 3, label: 'Smart' },
+  monthlyWateringAdjustments: [100, 100, 100, 110, 120, 130, 140, 130, 120, 110, 100, 100],
+  zoneSpecific: false,
+  advancedProgramId: 99999,
+  scope: 'CUSTOMER',
+  conditionalWateringAdjustments: [{ id: 17, label: 'Hot Days' }],
+  wateringFrequency: {
+    label: 'Daily',
+    description: 'Run every day',
+    period: { value: 1, label: 'day' },
+  },
+  runTimeGroup: { id: 12345, name: 'Default 15min', duration: 15 },
+};
+
+describe('serializeAdvancedProgram', () => {
+  it('emits flat snake_case shape with all subtype-specific fields plus the Program-interface common fields', () => {
+    const out = serializeAdvancedProgram(fakeAdvancedProgram);
+    expect(out).toMatchObject({
+      id: 6390999,
+      name: 'Lawn Smart',
+      program_type: 'Advanced',
+      advanced_program_id: 99999,
+      scope: 'CUSTOMER',
+      zone_specific: false,
+      monthly_watering_adjustments: [100, 100, 100, 110, 120, 130, 140, 130, 120, 110, 100, 100],
+      scheduling_method: 3,
+      schedule_adjustment_ids: [17],
+    });
+    expect(out.watering_frequency).toEqual({
+      label: 'Daily',
+      description: 'Run every day',
+      period_value: 1,
+      period_label: 'day',
+    });
+    expect(out.run_time_group).toEqual({
+      id: 12345,
+      name: 'Default 15min',
+      duration_minutes: 15,
+    });
+    expect(out.applies_to_zones).toEqual([
+      { id: 100, number: 1, name: 'Front Lawn' },
+      { id: 101, number: 2, name: 'Back Lawn' },
+    ]);
+  });
+
+  it('emits run_time_group: null when AdvancedProgram has no associated run-time group', () => {
+    const out = serializeAdvancedProgram({ ...fakeAdvancedProgram, runTimeGroup: null });
+    expect(out.run_time_group).toBeNull();
+  });
+
+  it('emits null period_value/label when WateringPeriodicity members are null (schema allows both)', () => {
+    const out = serializeAdvancedProgram({
+      ...fakeAdvancedProgram,
+      wateringFrequency: {
+        label: 'Custom',
+        description: 'Per-zone schedule',
+        period: { value: null, label: null },
+      },
+    });
+    const wf = out.watering_frequency as { period_value: unknown; period_label: unknown };
+    expect(wf.period_value).toBeNull();
+    expect(wf.period_label).toBeNull();
+  });
+
+  it('uses program_type: "Advanced" (matching the get_program input enum and snapshot discriminator)', () => {
+    const out = serializeAdvancedProgram(fakeAdvancedProgram);
+    expect(out.program_type).toBe('Advanced');
+  });
+});
+
+describe('serializeAdvancedProgramReference', () => {
+  it('emits the minimal {id, name, advanced_program_id} cross-reference shape', () => {
+    const out = serializeAdvancedProgramReference({
+      id: 6390999,
+      name: 'Lawn Smart',
+      advancedProgramId: 99999,
+    });
+    expect(out).toEqual({
+      id: 6390999,
+      name: 'Lawn Smart',
+      advanced_program_id: 99999,
+    });
+  });
+});
+
+describe('serializeZoneSettings — advanced_program field', () => {
+  it('populates advanced_program when wateringSettings.advancedProgram is present (ADVANCED-mode zone)', () => {
+    const out = serializeZoneSettings({
+      ...baseZone,
+      wateringSettings: {
+        fixedWateringAdjustment: 100,
+        cycleAndSoakSettings: null,
+        advancedProgram: { id: 6390999, name: 'Lawn Smart', advancedProgramId: 99999 },
+      },
+    });
+    expect(out.advanced_program).toEqual({
+      id: 6390999,
+      name: 'Lawn Smart',
+      advanced_program_id: 99999,
+    });
+  });
+
+  it('emits advanced_program: null on STANDARD-mode zones (the AdvancedWateringSettings fragment did not match)', () => {
+    const out = serializeZoneSettings(baseZone);
+    expect(out.advanced_program).toBeNull();
+  });
+
+  it('emits advanced_program: null when wateringSettings is entirely absent', () => {
+    const out = serializeZoneSettings({ ...baseZone, wateringSettings: null });
+    expect(out.advanced_program).toBeNull();
   });
 });

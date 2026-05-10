@@ -418,4 +418,62 @@ describe('preview/apply contract', () => {
     expect(payload.result.model_id).toBe(12);
     expect(payload.result.zone_ids).toEqual([100]);
   });
+
+  // -------------------------------------------------------------------------
+  // get_program(Advanced) integration — Phase 3 (add-advanced-mode-support)
+  // -------------------------------------------------------------------------
+  // The previewApply test file is the closest existing integration harness for tool
+  // dispatch. get_program is a read-only tool (no preview/apply), but the same callTool
+  // helper works.
+
+  const fakeAdvancedProgram = {
+    __typename: 'AdvancedProgram' as const,
+    id: 6390999,
+    name: 'Lawn Smart',
+    appliesToZones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    schedulingMethod: { value: 3, label: 'Smart' },
+    monthlyWateringAdjustments: Array(12).fill(100),
+    zoneSpecific: false,
+    advancedProgramId: 99999,
+    scope: 'CUSTOMER' as const,
+    conditionalWateringAdjustments: [],
+    wateringFrequency: { label: 'Daily', description: 'Run every day', period: { value: 1, label: 'day' } },
+    runTimeGroup: { id: 12345, name: 'Default 15min', duration: 15 },
+  };
+
+  it('get_program with program_type: Advanced returns serialized AdvancedProgram detail', async () => {
+    const app = makeApp({ getAdvancedProgram: async () => fakeAdvancedProgram });
+    const resp = await callTool(app, 'get_program', {
+      controller_id: 317416,
+      program_id: 6390999,
+      program_type: 'Advanced',
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      id: number;
+      program_type: string;
+      advanced_program_id: number;
+      scope: string;
+      watering_frequency: { label: string; period_value: number; period_label: string };
+      run_time_group: { duration_minutes: number };
+    };
+    expect(payload.id).toBe(6390999);
+    expect(payload.program_type).toBe('Advanced');
+    expect(payload.advanced_program_id).toBe(99999);
+    expect(payload.scope).toBe('CUSTOMER');
+    expect(payload.watering_frequency.label).toBe('Daily');
+    expect(payload.watering_frequency.period_value).toBe(1);
+    expect(payload.run_time_group.duration_minutes).toBe(15);
+  });
+
+  it('get_program with program_type: Advanced returns config_error when the id is not Advanced', async () => {
+    const app = makeApp({ getAdvancedProgram: async () => null });
+    const resp = await callTool(app, 'get_program', {
+      controller_id: 317416,
+      program_id: 6390999,
+      program_type: 'Advanced',
+    });
+    expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/^config_error:.*Advanced program 6390999 not found/);
+  });
 });

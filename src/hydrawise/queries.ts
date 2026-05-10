@@ -529,6 +529,15 @@ export interface ProgramListEntry {
 
 /** Read shapes returned from the schedule queries. They retain the API's nested
  *  shapes so the serializer in `tools/serializers.ts` can normalize them. */
+// Per-zone reference to the AdvancedProgram governing that zone (ADVANCED-mode only).
+// Embedded inside ZoneRichRead.wateringSettings via the `... on AdvancedWateringSettings`
+// fragment. Null/absent on STANDARD-mode zones (the fragment doesn't match).
+export interface AdvancedProgramReferenceRead {
+  id: number;
+  name: string;
+  advancedProgramId: number;
+}
+
 export interface ZoneRichRead {
   id: number;
   name: string;
@@ -542,6 +551,10 @@ export interface ZoneRichRead {
       cycleDuration: number;
       soakDuration: number;
     } | null;
+    // Populated only for ADVANCED-mode zones (the `... on AdvancedWateringSettings` fragment
+    // matches there). Undefined/null for STANDARD-mode zones — the fragment is selected at
+    // query time but only resolves when the runtime concrete type is AdvancedWateringSettings.
+    advancedProgram?: AdvancedProgramReferenceRead | null;
   } | null;
   monitoringSettings: {
     operatingRanges: {
@@ -621,6 +634,16 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
         cycleAndSoakSettings {
           cycleDuration
           soakDuration
+        }
+        # ADVANCED-mode zones expose a per-zone AdvancedProgram reference. The fragment
+        # only matches for AdvancedWateringSettings concrete-type instances; STANDARD-mode
+        # zones (StandardWateringSettings) leave advancedProgram absent/null.
+        ... on AdvancedWateringSettings {
+          advancedProgram {
+            id
+            name
+            advancedProgramId
+          }
         }
       }
       monitoringSettings {
@@ -745,7 +768,12 @@ export const PROGRAMS_QUERY = /* GraphQL */ `
   }
 `;
 
-/** GraphQL: programs with full Standard detail per program. Filtered by id client-side. */
+/** GraphQL: programs with full Standard + Advanced detail per program. Filtered by id client-side.
+ *
+ * The `controller.programs(includeZoneSpecific: true)` resolver returns a mix of `StandardProgram`
+ * and `AdvancedProgram` (both implement the `Program` interface). Each fragment selects the
+ * subtype-specific fields; common fields (id, name, appliesToZones) live above both fragments.
+ */
 export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
   query ProgramsFull($controllerId: Int!, $includeZoneSpecific: Boolean!) {
     controller(controllerId: $controllerId) {
@@ -798,6 +826,39 @@ export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
             }
           }
         }
+        ... on AdvancedProgram {
+          # AdvancedProgram.schedulingMethod takes an optional hideProgramName: Boolean (default
+          # false). We omit it, accepting the schema default. Selecting an arg here would
+          # require a fragment alias to avoid colliding with the StandardProgram selection.
+          schedulingMethod {
+            value
+            label
+          }
+          monthlyWateringAdjustments
+          zoneSpecific
+          advancedProgramId
+          scope
+          conditionalWateringAdjustments(controllerId: $controllerId) {
+            id
+            label
+          }
+          wateringFrequency {
+            label
+            description
+            period {
+              value
+              label
+            }
+          }
+          # runTimeGroup is RunTimeGroup, nullable on AdvancedProgram per schema — captures the
+          # per-program run duration. An AdvancedProgram with no associated run-time group
+          # returns null here.
+          runTimeGroup {
+            id
+            name
+            duration
+          }
+        }
       }
     }
   }
@@ -822,6 +883,45 @@ export interface StandardProgramRead {
     zone: { id: number; number: { value: number } };
     runTimeGroup: { id: number; name: string | null; duration: number };
   }[];
+}
+
+// AdvancedProgramScopeEnum (live SDL): CUSTOMER | CONTRACTOR.
+export type AdvancedProgramScope = 'CUSTOMER' | 'CONTRACTOR';
+
+// Full inlined shape for an AdvancedProgram entry — selected by the `... on AdvancedProgram`
+// fragment in PROGRAMS_FULL_QUERY. Companion to StandardProgramRead; both implement the
+// `Program` interface upstream so they share id/name/appliesToZones at the top level.
+//
+// Note: AdvancedProgram does NOT carry start_times / days_run / day_pattern / periodicity /
+// timeRange like StandardProgram does. Schedule-time data for ADVANCED-mode zones lives
+// per-zone via `zone.wateringSettings.programStartTimes` and the referenced WateringProgram
+// (Time/Smart/VSS) — fetched separately by the snapshot's per-zone path.
+export interface AdvancedProgramRead {
+  __typename: 'AdvancedProgram';
+  id: number;
+  name: string;
+  appliesToZones: { id: number; number: { value: number }; name: string }[];
+  schedulingMethod: { value: number; label: string | null } | null;
+  monthlyWateringAdjustments: number[];
+  // True when this program's zone associations may differ per-zone (each zone runs its own
+  // schedule); false when one program shape is shared across all `appliesToZones`.
+  zoneSpecific: boolean;
+  // Distinct from `id` — `advancedProgramId` cross-references the WateringProgram subtype
+  // record (Time/Smart/VSS) that defines this program's frequency/duration. Keep both;
+  // CLAUDE.md gotcha (Phase 3) explains the distinction is unclear from the schema alone.
+  advancedProgramId: number;
+  scope: AdvancedProgramScope;
+  conditionalWateringAdjustments: { id: number; label: string }[];
+  // ProgramWateringFrequency: { label: String!, period: WateringPeriodicity!, description: String! }
+  // WateringPeriodicity: { value: Int, label: String } — both nullable per schema.
+  wateringFrequency: {
+    label: string;
+    description: string;
+    period: { value: number | null; label: string | null };
+  };
+  // RunTimeGroup is nullable on AdvancedProgram (unlike StandardProgram.applications.runTimeGroup
+  // which is non-null per-application).
+  runTimeGroup: { id: number; name: string | null; duration: number } | null;
 }
 
 /** GraphQL: program start times via wateringSettings on a zone (best available read path). */
