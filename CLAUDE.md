@@ -66,6 +66,7 @@ src/
     status.ts          read-only status tools
     control.ts         runtime control tools (start/stop/suspend/resume) — PHYSICAL ACTION
     scheduling.ts      schedule read+write tools — PHYSICAL ACTION with preview support
+    patch.ts           focused read-merge-write patch tools (update one field, dispatch full payload)
     backup.ts          dump_controller_snapshot — versioned JSON snapshot
     reporting.ts       read-only reporting tools (watering report, run history, run summary)
     schedule-reads.ts  upcoming schedule tools (get_zone_scheduled_runs, get_zone_next_run, get_controller_schedule)
@@ -142,6 +143,20 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 - `get_watering_report` — controller-level run log for a date range (`from`/`until` as ISO-8601 strings → Unix timestamps); returns scheduled vs. reported times, durations in seconds, water usage, stop reason per run event
 - `get_zone_run_history` — past runs for a single zone (`last_run` + `runs[]`). Each entry has `normal_duration_minutes` (program default), `scheduled_duration_minutes` (what the controller was told to run), and `actual_elapsed_seconds` (computed from end−start; smaller than scheduled when a run was cancelled or stopped early)
 - `get_run_summary` — aggregated normal vs. actual run time and water volume for a zone; `period` is one of `CURRENT_WEEK | WEEK | MONTH | YEAR` with period-specific numeric args. `total_normal_run_time_minutes` and `total_actual_run_time_minutes` are `null` when the API returns no data for the period (distinguishable from a genuine zero-minute result)
+
+### Patch tools — `src/tools/patch.ts` (PHYSICAL ACTION, STANDARD-mode only for zone tools)
+
+Focused read-merge-write tools. Each one reads the current state, mutates one targeted field, and dispatches the full payload — the caller only supplies the field being changed. **Prefer these for incremental edits** over the full-payload `update_*` tools. Use full-payload tools for bulk updates, restore-recipe playback, or fields not covered here.
+
+All tools return `{ before, after, preview }` and support `preview: true` to inspect the planned mutation payload without dispatching.
+
+- `update_zone_run_time_in_program(controller_id, program_id, zone_id, run_duration_minutes, preview?)` — change one zone's run time in a Standard program; errors if zone not in program
+- `update_program_day_pattern(controller_id, program_id, standard_program_day_pattern, day_pattern, interval_days?, preview?)` — change a Standard program's day schedule (`dow` / `even` / `odd` / `interval`); `interval_days` required when mode is `interval`
+- `update_program_start_times(controller_id, program_id, start_times, preview?)` — bulk-replace ALL start times for a Standard program (replaces `start_times` array on the program)
+- `update_zone_cycle_soak(controller_id, zone_id, cycle_soak_enable, cycle_custom_time_minutes?, soak_custom_time_minutes?, preview?)` — STANDARD-mode only; fetches current zone settings (resolves `icon`), merges cycle/soak fields, dispatches `updateZoneStandard`; omit duration args to preserve current values
+- `update_zone_watering_adjustment(controller_id, zone_id, watering_adjustment_percent, preview?)` — STANDARD-mode only; range 0–200; fetches current zone settings (resolves `icon`) and dispatches `updateZoneStandard`
+
+Note: zone-level patch tools (`update_zone_cycle_soak`, `update_zone_watering_adjustment`) are STANDARD-mode only. For ADVANCED-mode zones, use `update_zone_settings` directly (which accepts the full ~25-field payload including the unreadable fields like `watering_mode` that must be supplied explicitly).
 
 ### Schedule reads (upcoming) — `src/tools/schedule-reads.ts` (read-only)
 - `get_zone_scheduled_runs(zone_id, from_epoch_seconds?, until_epoch_seconds?)` — wraps `Zone.runsBetween(from, until)`. Default window: now → now+7d. Returns `[]` for zones with no upcoming runs in the window. `remaining_time_seconds` per run is seconds until the run starts; it is `0` once the run has begun.

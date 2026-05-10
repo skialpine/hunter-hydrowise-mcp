@@ -185,6 +185,12 @@ describe('streamable HTTP transport', () => {
         'get_zone_scheduled_runs',
         'get_zone_next_run',
         'get_controller_schedule',
+        // patch tools
+        'update_zone_run_time_in_program',
+        'update_program_day_pattern',
+        'update_program_start_times',
+        'update_zone_cycle_soak',
+        'update_zone_watering_adjustment',
       ].sort(),
     );
   });
