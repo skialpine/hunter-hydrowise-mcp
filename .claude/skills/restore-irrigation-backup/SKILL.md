@@ -84,9 +84,13 @@ If any dependency step has not yet been successfully applied, halt with an error
   - If `get_program` throws an error: report which step failed and the error text verbatim.
   - If `get_program` returns successfully but the program with `program_id` is absent from the result: report which `program_id` is missing from the live controller.
 - **`create_program_start_time`**: the snapshot doesn't capture all required fields (apply_all, zones, schedules, days-of-week ints) — the recipe emits the captured `time` and `zones` (translated from `zone_ids`) plus null for everything else. Call `list_program_start_times_for_zone(zone_id)` to inspect the live state.
-  - **Idempotency check** (skip if already present): match the recipe's `args.time` (HH:MM string) against each live start time's `time` field. If you find a time match, classify by zone-set relationship:
-    - **Live zones ⊇ recipe zones (superset or equal)**: the start time is fully covered — skip this step. If the sets are equal, record as "skipped — already present." If live has *extra* zones beyond the recipe (strict superset), record as "skipped — live is wider than snapshot" and emit a warning in the final report (list the step order, the recipe zones, and the live zones).
-    - **All other cases** (live is a strict subset of recipe zones, completely disjoint zone sets, or no time match at all): do NOT skip — apply the step to restore the full zone set. Record the zone-set mismatch as a warning in the final report.
+  - **Idempotency check** (skip if already present): match the recipe's `args.time` (HH:MM string) against each live start time's `time` field.
+    - **If `recipe.zones` is empty**: do NOT enter the zone-set classification below. Emit a warning — "recipe emitted empty zone list for start time {time}; idempotency check skipped" — and prompt the user to inspect the snapshot and decide whether to apply or skip this step.
+    - **If no time match exists**: fall through to the build-payload step below. No warning needed — this is the normal case for a brand-new start time.
+    - **If a time match is found**, classify by zone-set relationship:
+      - **Both sets empty** (`recipe.zones = []` and `live.zones = []`): this is a degenerate match. Record as "skipped — empty zones on both sides" and emit a warning (the start time may be misconfigured).
+      - **Live zones ⊇ recipe zones (superset or equal, both non-empty)**: the start time is fully covered — skip this step. If the sets are equal, record as "skipped — already present." If live has *extra* zones beyond the recipe (strict superset), record as "skipped — live is wider than snapshot" and emit a warning (list the step order, the recipe zones, and the live zones found during the idempotency check).
+      - **All other cases** (live is a strict subset of recipe zones — including empty live zones — or completely disjoint zone sets): do NOT skip — apply the step to restore the full zone set. Record the zone-set mismatch as a warning in the final report (list recipe zones vs. live zones found during the idempotency check).
   - If no match exists, build the full payload from the snapshot's `time`/`zones` plus live patterns (apply_all, schedules, watering_type, time_type, day-of-week ints).
 
 #### c. Preview the step
@@ -115,7 +119,7 @@ When all steps complete (or restore halts), report:
 - Steps successfully applied.
 - Steps skipped (with reason — e.g., zone CRUD diff, already-present, user declined).
 - Steps that failed (which step, what error, what live state was last verified).
-- Warnings (e.g., `create_program_start_time` steps skipped because live zones were a strict superset of recipe zones — list step order, recipe zones, and live zones for each; `create_program_start_time` steps applied due to partial zone overlap — list recipe zones vs. live zones found at apply time).
+- Warnings (e.g., `create_program_start_time` steps skipped because live zones were a strict superset of recipe zones; `create_program_start_time` steps applied because live zones did not cover the full recipe zone set (strict subset, disjoint, or empty live zones); degenerate both-empty start-time matches; recipe steps where `recipe.zones` was empty. For each warning, list the step order, the recipe zones, and the live zones found during the idempotency check).
 - The savepoint file path (if step 5 created one).
 - Recommendation: "Capture a fresh snapshot now to verify the restored state matches the source."
 
