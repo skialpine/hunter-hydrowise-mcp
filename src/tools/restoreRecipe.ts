@@ -74,7 +74,9 @@ interface SnapshotZoneSettings {
   _unreadable_fields: string[];
   advanced_program?: { id: number; name: string; advanced_program_id: number } | null;
   // Injected by backup.ts after serializeZoneSettings — not part of the ZoneRichRead
-  // read shape, but always present in the snapshot envelope (empty array when no notes).
+  // read shape. Always populated in snapshots built by the current code (empty array
+  // when no notes). The `?` makes this type compatible with older snapshots that
+  // predate this field — use `?? []` when reading rather than direct array access.
   zone_notes?: SnapshotNote[];
 }
 

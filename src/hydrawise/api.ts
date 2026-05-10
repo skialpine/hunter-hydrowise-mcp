@@ -312,7 +312,8 @@ export class HydrawiseApi {
   // controllerNotes and zoneNotes are subscription-gated: fetching them as part of
   // CONTROLLER_FIELDS or ZONE_FULL_QUERY causes Hydrawise to null the entire parent
   // object on free accounts. These dedicated methods let callers handle the error
-  // independently (e.g. fallback to [] in backup.ts).
+  // independently (e.g. backup.ts falls back to [] and emits a warn on subscription
+  // errors, propagating all other errors).
 
   async getControllerNotes(controllerId: number): Promise<ControllerNoteRead[]> {
     const data = await this.client.query<{

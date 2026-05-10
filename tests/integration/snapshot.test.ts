@@ -190,7 +190,7 @@ function makeApp(apiOverrides: Partial<HydrawiseApi> = {}) {
     ],
     ...apiOverrides,
   });
-  return buildApp(makeConfig(), () => buildMcpServer(api), createLogger('error'));
+  return buildApp(makeConfig(), () => buildMcpServer(api, createLogger('error')), createLogger('error'));
 }
 
 const INITIALIZE_BODY = {
@@ -511,6 +511,32 @@ describe('dump_controller_snapshot v5', () => {
   it('propagates non-subscription HydrawiseAPIError from getControllerNotes', async () => {
     const app = makeApp({
       getControllerNotes: async () => {
+        throw new HydrawiseAPIError('Internal server error');
+      },
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBe(true);
+  });
+
+  it('degrades gracefully when zone notes are subscription-gated (returns [] not error)', async () => {
+    const app = makeApp({
+      getZoneNotes: async () => {
+        throw new HydrawiseAPIError('Feature is not available under your subscription.');
+      },
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: { zones: Array<{ settings: { zone_notes: unknown[] } }> };
+    };
+    for (const zone of snap.controller.zones) {
+      expect(zone.settings.zone_notes).toEqual([]);
+    }
+  });
+
+  it('propagates non-subscription HydrawiseAPIError from getZoneNotes', async () => {
+    const app = makeApp({
+      getZoneNotes: async () => {
         throw new HydrawiseAPIError('Internal server error');
       },
     });

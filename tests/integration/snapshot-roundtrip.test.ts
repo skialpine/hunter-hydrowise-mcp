@@ -139,7 +139,7 @@ function makeApp() {
     ],
     getZoneNotes: async () => [],
   });
-  return buildApp(makeConfig(), () => buildMcpServer(api), createLogger('error'));
+  return buildApp(makeConfig(), () => buildMcpServer(api, createLogger('error')), createLogger('error'));
 }
 
 const INITIALIZE_BODY = {
