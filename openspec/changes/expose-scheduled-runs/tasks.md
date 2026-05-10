@@ -30,8 +30,8 @@
 
 - [ ] 6.1 Unit test `serializeScheduledZoneRun` with a fixture covering all fields including `DateTime.value` unwrapping and a future run with `remaining_time_seconds: 0`.
 - [ ] 6.2 Unit test `from/until` defaulting and validation: `from >= until` (error), `until_epoch_seconds` in the past (error), both omitted (defaults to now+7d window).
-- [ ] 6.3 Integration test `get_zone_scheduled_runs`: zone with upcoming runs (non-empty array), zone with no upcoming runs (empty array), zone not found (api_error, not empty array).
-- [ ] 6.4 Integration test `get_zone_next_run`: zone with a next run (returns object), zone with no next run (returns null), zone not found (api_error, not null). Also test: `scheduledRuns.nextRun: null` (zone exists, field null) is handled as null return, not crash.
+- [ ] 6.3 Integration test `get_zone_scheduled_runs`: zone with upcoming runs (non-empty array), zone with no upcoming runs (empty array), zone not found (not_found, not empty array).
+- [ ] 6.4 Integration test `get_zone_next_run`: zone with a next run (returns object), zone with no next run (returns null), zone not found (not_found, not null). Also test: `scheduledRuns.nextRun: null` (zone exists, field null) is handled as null return, not crash.
 - [ ] 6.5 Integration test `get_controller_schedule`: controller with multiple zones (some with runs, some without) — verify all zones appear in the array with correct `zone_id`, `zone_name`, `zone_number`; verify a zone with no runs has `runs: []`. Also test: one zone query returns an API error — assert the entire call returns `api_error` (not a partial result).
 - [ ] 6.6 Integration test `from > until` on each tool — expect `config_error`. Also test `until_epoch_seconds` in the past for each tool — expect `config_error`.
 - [ ] 6.7 Run `npm test` — all tests pass.
