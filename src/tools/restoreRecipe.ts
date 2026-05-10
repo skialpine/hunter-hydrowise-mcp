@@ -487,13 +487,19 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
   for (const zone of c.zones) {
     if (!zone.settings) continue;
     const s = zone.settings;
-    const unreadableNote =
+    const advancedUnreadableNote =
       s._unreadable_fields.length > 0
         ? `Zone has ${s._unreadable_fields.length} unreadable fields (${s._unreadable_fields.join(', ')}); the args above contain nulls for them. The AI must read live state via get_zone_settings, merge non-null snapshot values over live values, and pass the merged payload — applying the recipe args verbatim will fail Zod validation on the required fields.`
         : undefined;
 
     if (c.program_mode === 'STANDARD') {
       // STANDARD-mode: use update_zone_standard (safe subset of fields; no ADVANCED-only args).
+      // Only global_master_valve is unreadable for STANDARD zones — the _unreadable_fields list
+      // on the snapshot contains all ADVANCED-mode fields too, but those don't exist in the
+      // STANDARD schema. Emit a targeted note rather than the ADVANCED unreadable list.
+      const standardNote = s.global_master_valve == null
+        ? 'global_master_valve is not readable — fetch live state via get_zone_settings and supply the actual value before applying.'
+        : undefined;
       push(
         'update_zone_standard',
         {
@@ -503,8 +509,10 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           icon: s.icon,
           // global_master_valve is not readable — null here; AI must merge from live state.
           global_master_valve: s.global_master_valve,
-          watering_adjustment_percent: s.watering_adjustment_percent,
-          cycle_soak_enable: s.cycle_soak_enable,
+          // watering_adjustment_percent and cycle_soak_enable default to safe values when
+          // wateringSettings was absent at capture time (rare; prevents Zod rejection on replay).
+          watering_adjustment_percent: s.watering_adjustment_percent ?? 100,
+          cycle_soak_enable: s.cycle_soak_enable ?? false,
           cycle_custom_time_minutes: s.cycle_custom_time_minutes,
           soak_custom_time_minutes: s.soak_custom_time_minutes,
           sensor_ids: s.sensor_ids,
@@ -514,7 +522,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           current_monitoring_value: s.current_monitoring_value,
         },
         programStepOrders,
-        unreadableNote,
+        standardNote,
       );
     } else {
       // ADVANCED-mode or unknown: use update_zone_settings (full updateZoneAdvanced payload).
@@ -552,7 +560,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           current_monitoring_value: s.current_monitoring_value,
         },
         programStepOrders,
-        unreadableNote,
+        advancedUnreadableNote,
       );
     }
   }

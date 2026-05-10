@@ -387,7 +387,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
     const zoneStep = recipe.find((s) => s.tool === 'update_zone_standard');
     expect(zoneStep).toBeDefined();
     expect(zoneStep!.depends_on).toContain(programStep!.order);
-    expect(zoneStep!.notes).toMatch(/unreadable fields/);
+    expect(zoneStep!.notes).toMatch(/global_master_valve/);
     // ADVANCED-only fields must not appear in the STANDARD-mode step args
     expect(zoneStep!.args).not.toHaveProperty('watering_mode');
     expect(zoneStep!.args).not.toHaveProperty('watering_type');
