@@ -1282,7 +1282,7 @@ function standardProgramToVars(
       runDuration: z.run_duration ?? null,
     })),
     scheduleAdjustmentIds: p.schedule_adjustment_ids,
-    seasonalAdjustmentFactors: p.seasonal_adjustment_factors,
+    seasonalAdjustmentFactors: p.seasonal_adjustment_factor_percents,
     validFrom: p.valid_from_epoch_seconds,
     validTo: p.valid_to_epoch_seconds,
     ignoreRainSensor: p.ignore_rain_sensor,
@@ -1299,7 +1299,7 @@ function wateringProgramToVars(
     wateringProgramName: p.watering_program_name,
     wateringProgramType: p.watering_program_type,
     controllerId: p.controller_id,
-    seasonalAdjustment: p.seasonal_adjustment,
+    seasonalAdjustment: p.seasonal_adjustment_percents,
     scheduleAdjustmentIds: p.schedule_adjustment_ids,
   };
   if (isUpdate && p.program_id !== undefined) base.wateringProgramId = p.program_id;

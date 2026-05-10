@@ -169,7 +169,7 @@ describe('preview/apply contract', () => {
       watering_program_type: null,
       controller_id: 99,
       schedule_adjustment_ids: [],
-      seasonal_adjustment: null,
+      seasonal_adjustment_percents: null,
       smart_watering_run_time: 600,
       smart_watering_frequency_value: 3,
       preview: true,

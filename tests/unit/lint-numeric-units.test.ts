@@ -30,10 +30,18 @@ describe('numeric field naming lint', () => {
   it('every z.number() Zod input in src/tools/*.ts has a unit suffix or is whitelisted', () => {
     const violations: string[] = [];
     for (const { name, src } of toolFiles()) {
+      // Bare z.number() fields
       for (const match of src.matchAll(/(\w+):\s*z\.number\b/g)) {
         const field = match[1]!;
         if (!hasUnitSuffix(field) && !IDENTIFIER_WHITELIST.has(field)) {
           violations.push(`${name}: '${field}' has no unit suffix and is not whitelisted`);
+        }
+      }
+      // z.array(z.number()) fields
+      for (const match of src.matchAll(/(\w+):\s*z\.array\(\s*z\.number\b/g)) {
+        const field = match[1]!;
+        if (!hasUnitSuffix(field) && !IDENTIFIER_WHITELIST.has(field)) {
+          violations.push(`${name}: '${field}' (array) has no unit suffix and is not whitelisted`);
         }
       }
     }
@@ -46,7 +54,8 @@ describe('numeric field naming lint', () => {
     const violations: string[] = [];
     for (const { name, src } of toolFiles()) {
       // Capture field name and the full value chain up to the end of the line.
-      for (const match of src.matchAll(/(\w+):\s*(z\.number\b.*)/g)) {
+      // Covers both bare z.number() and z.array(z.number()) patterns.
+      for (const match of src.matchAll(/(\w+):\s*(z\.(?:number|array)\b.*)/g)) {
         const field = match[1]!;
         const chain = match[2]!;
         if (!hasUnitSuffix(field)) continue;

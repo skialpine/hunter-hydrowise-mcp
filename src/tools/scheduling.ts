@@ -81,7 +81,7 @@ const WateringTriggersInput = {
   extend_water_temperature: z.number().describe('Temperature threshold to extend watering, in account-preferred units (WateringTriggers.extendWaterTemperature LocalizedValueType).'),
   extend_water_temperature_enabled: z.boolean(),
   extend_water_temperature_percent: z.number().int().describe('Extra watering when temperature threshold met, in percent (WateringTriggers.extendWaterTemperaturePercentage Int).'),
-  extend_water_humidity_percent: z.number().int().describe('Watering reduction when humidity exceeds threshold, in percent (WateringTriggers.extendWaterHumidity Int).'),
+  extend_water_humidity_percent: z.number().int().describe('Humidity adjustment factor for extended watering, in percent (WateringTriggers.extendWaterHumidity Int).'),
   extend_water_humidity_enabled: z.boolean(),
   suspend_water_week_rain: z.number().describe('Weekly rainfall amount to trigger suspension, in account-preferred units (WateringTriggers.suspendWaterWeekRain LocalizedValueType).'),
   suspend_water_rain_days: z.number().int().describe('Days to suspend watering after rainfall, in days (WateringTriggers.suspendWaterRainDays Int).'),
@@ -153,7 +153,7 @@ const StandardProgramBaseShape = {
   start_times: z.array(z.string()),
   zone_run_times: z.array(ZoneRunTimeShape),
   schedule_adjustment_ids: z.array(z.number().int()),
-  seasonal_adjustment_factors: z.array(z.number().int()),
+  seasonal_adjustment_factor_percents: z.array(z.number().int()).describe('12 monthly watering adjustment factors Jan–Dec, in percent (updateStandardProgram.seasonalAdjustmentFactors [Int]).'),
   valid_from_epoch_seconds: z.number().int().nullable().describe('Program valid-from date as Unix timestamp, in seconds (StandardProgram timeRange.validFrom Int).'),
   valid_to_epoch_seconds: z.number().int().nullable().describe('Program valid-to date as Unix timestamp, in seconds (StandardProgram timeRange.validTo Int).'),
   ignore_rain_sensor: z.boolean().nullable(),
@@ -180,7 +180,7 @@ const WateringProgramBaseShape = {
   watering_program_type: z.number().int().nullable(),
   controller_id: z.number().int(),
   schedule_adjustment_ids: z.array(z.number().int()).nullable(),
-  seasonal_adjustment: z.array(z.number().int()).nullable(),
+  seasonal_adjustment_percents: z.array(z.number().int()).nullable().describe('12 monthly watering adjustment factors Jan–Dec, in percent (updateTimeBasedWateringProgram.seasonalAdjustment [Int]).'),
   fixed_watering_run_time: z.number().int().optional().describe('DEFERRED — unit not yet verified on a live controller (likely minutes; updateTimeBasedWateringProgram.fixedWateringRunTime Int).'),
   fixed_watering_frequency_mode: z.number().int().optional(),
   fixed_watering_frequency_value: z.number().int().nullable().optional().describe('DEFERRED — unit not yet verified on a live controller (updateTimeBasedWateringProgram.fixedWateringFrequencyValue Int).'),
@@ -587,7 +587,7 @@ interface WateringProgramFlatInput {
   watering_program_type: number | null;
   controller_id: number;
   schedule_adjustment_ids: number[] | null;
-  seasonal_adjustment: number[] | null;
+  seasonal_adjustment_percents: number[] | null;
   fixed_watering_run_time?: number;
   fixed_watering_frequency_mode?: number;
   fixed_watering_frequency_value?: number | null;
@@ -605,7 +605,7 @@ function narrowWateringProgram(p: WateringProgramFlatInput): WateringProgramWrit
     watering_program_type: p.watering_program_type,
     controller_id: p.controller_id,
     schedule_adjustment_ids: p.schedule_adjustment_ids,
-    seasonal_adjustment: p.seasonal_adjustment,
+    seasonal_adjustment_percents: p.seasonal_adjustment_percents,
   };
   if (p.program_type === 'Time') {
     if (p.fixed_watering_run_time === undefined || p.fixed_watering_frequency_mode === undefined) {

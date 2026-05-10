@@ -120,7 +120,7 @@ interface SnapshotStandardProgram {
   days_run: string[];
   standard_program_day_pattern: string | null;
   scheduling_method: number | null;
-  monthly_watering_adjustments: number[];
+  monthly_watering_adjustment_percents: number[];
   schedule_adjustment_ids: number[];
   valid_from_epoch_seconds: number | null;
   valid_to_epoch_seconds: number | null;
@@ -153,11 +153,12 @@ export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
   const caveats: string[] = [];
   const c = snapshot.controller;
 
-  // Caveat: v5-and-earlier snapshots use un-suffixed field names (cycle_custom_time,
-  // inter_zone_delay, interval, factors, etc.) which differ from this server's v6 naming
-  // convention. Their embedded _restore_recipe args use the old names and will fail Zod
-  // validation when replayed against the current server. To replay an older snapshot,
-  // use the server version that captured it.
+  // NOTE: The v5-compatibility guard below is intentionally unreachable in production.
+  // buildRestoreCaveats is only called from backup.ts at capture time, which always passes a
+  // freshly-built v6 snapshot — so snapshot_version < 6 can never be true here.
+  // The v5 warning is surfaced where it actually matters: at restore time in the
+  // restore-irrigation-backup skill (SKILL.md), which explicitly stops and warns the user
+  // before replaying a v5 recipe against this server.
   if (snapshot.snapshot_version < 6) {
     caveats.push(
       `This snapshot was captured by server version ${snapshot.snapshot_version} (pre-v6). The _restore_recipe args use the old un-suffixed field names (e.g. cycle_custom_time, factors, interval) which are incompatible with the current server's v6 naming convention. Do NOT replay this snapshot's recipe against the current server — field names will fail Zod validation. Use the server version that captured this snapshot, or manually translate field names to the v6 convention.`,
@@ -456,13 +457,13 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           run_duration: null,
         })),
         schedule_adjustment_ids: sp.schedule_adjustment_ids,
-        seasonal_adjustment_factors: sp.monthly_watering_adjustments,
+        seasonal_adjustment_factor_percents: sp.monthly_watering_adjustment_percents,
         valid_from_epoch_seconds: sp.valid_from_epoch_seconds,
         valid_to_epoch_seconds: sp.valid_to_epoch_seconds,
         ignore_rain_sensor: null,
       },
       [],
-      'program_type, day_pattern, run_duration, ignore_rain_sensor are not exposed by the read schema and arrive null. Resolve from get_program(controller_id, program_id, "Standard") before applying.',
+      'REQUIRED MERGE BEFORE APPLY: program_type, day_pattern, run_duration (every zone), and ignore_rain_sensor arrive null here — the read schema does not expose them. Call get_program(controller_id, program_id, "Standard") first, merge all non-null snapshot values over the live values, then apply. Skipping the merge and replaying null run_duration values verbatim will silently zero out every zone\'s run time.',
     );
     programStepOrders.push(order);
   }

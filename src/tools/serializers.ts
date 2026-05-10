@@ -48,16 +48,20 @@ const ZONE_UNREADABLE_FIELDS = [
 ] as const satisfies readonly (keyof ZoneWritable)[];
 
 // Registered unit suffixes — every fixed-unit numeric field name must end in one of these.
-export const UNIT_SUFFIXES = new Set(['_minutes', '_seconds', '_days', '_percent', '_percents', '_epoch_seconds']);
+export const UNIT_SUFFIXES: ReadonlySet<'_minutes' | '_seconds' | '_days' | '_percent' | '_percents' | '_epoch_seconds'> =
+  new Set(['_minutes', '_seconds', '_days', '_percent', '_percents', '_epoch_seconds']);
 
 // Unit-less identifier names exempt from the suffix rule: ids, indices, spatial coords, and
 // dimensionless calibration ratios. LocalizedValueType fields (value varies per user account
 // preference) use {value, unit} wrapping instead of suffixes and are also exempt from this list.
-export const IDENTIFIER_WHITELIST = new Set([
-  // Identifiers
+export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
+  // Identifiers (singular and plural array forms)
   'id', 'zone_id', 'controller_id', 'program_id', 'sensor_id', 'expander_id',
   'model_id', 'run_time_group_id', 'custom_sensor_type_id', 'customer_id',
   'pre_configured_watering_schedule_id', 'note_id',
+  'zone_ids', 'sensor_ids', 'schedule_adjustment_ids',
+  // ProgramStartTime zone/schedule id arrays (Int arrays of ids, not unit-bearing)
+  'zones', 'schedules',
   // Zone / device numbers (ordinal, not unit-bearing)
   'zone_number', 'input_number', 'number',
   // Spatial
@@ -471,7 +475,7 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     days_run: p.daysRun,
     start_times: p.startTimes,
     ignore_rain_sensor: p.ignoreRainSensor,
-    monthly_watering_adjustments: p.monthlyWateringAdjustments,
+    monthly_watering_adjustment_percents: p.monthlyWateringAdjustments,
     // Unwrap SelectedOption to bare Int (matches the project convention for unwrapping
     // `SelectedOption` at the serializer boundary, and stays consistent with
     // serializeAdvancedProgram below — both program serializers now emit the same shape).
@@ -527,7 +531,7 @@ export function serializeAdvancedProgram(p: AdvancedProgramRead): Record<string,
     advanced_program_id: p.advancedProgramId,
     scope: p.scope,
     zone_specific: p.zoneSpecific,
-    monthly_watering_adjustments: p.monthlyWateringAdjustments,
+    monthly_watering_adjustment_percents: p.monthlyWateringAdjustments,
     scheduling_method: p.schedulingMethod?.value ?? null,
     // Defensive `?? []` matches serializeStandardProgram — same `!`-violation gotcha.
     schedule_adjustment_ids: (p.conditionalWateringAdjustments ?? []).map((a) => a.id),

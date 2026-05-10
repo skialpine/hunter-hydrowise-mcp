@@ -461,7 +461,7 @@ export interface StandardProgramWritable {
   start_times: string[];
   zone_run_times: { zone_number: number; run_time_group_id?: number | null; run_duration?: number | null }[];
   schedule_adjustment_ids: number[];
-  seasonal_adjustment_factors: number[];
+  seasonal_adjustment_factor_percents: number[];
   valid_from_epoch_seconds: number | null;
   valid_to_epoch_seconds: number | null;
   ignore_rain_sensor: boolean | null;
@@ -478,7 +478,7 @@ interface WateringProgramBase {
   watering_program_type: number | null;
   controller_id: number;
   schedule_adjustment_ids: number[] | null;
-  seasonal_adjustment: number[] | null;
+  seasonal_adjustment_percents: number[] | null;
 }
 
 export interface TimeWateringProgramWritable extends WateringProgramBase {

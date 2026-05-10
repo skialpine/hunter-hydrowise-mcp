@@ -475,7 +475,7 @@ describe('serializeAdvancedProgram', () => {
       advanced_program_id: 99999,
       scope: 'CUSTOMER',
       zone_specific: false,
-      monthly_watering_adjustments: [100, 100, 100, 110, 120, 130, 140, 130, 120, 110, 100, 100],
+      monthly_watering_adjustment_percents: [100, 100, 100, 110, 120, 130, 140, 130, 120, 110, 100, 100],
       scheduling_method: 3,
       schedule_adjustment_ids: [17],
     });

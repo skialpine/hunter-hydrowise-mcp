@@ -40,7 +40,7 @@ describe('watering program subtype dispatch', () => {
       watering_program_type: 0,
       controller_id: 99,
       schedule_adjustment_ids: [],
-      seasonal_adjustment: null,
+      seasonal_adjustment_percents: null,
       fixed_watering_run_time: 600,
       fixed_watering_frequency_mode: 1,
     };
@@ -66,7 +66,7 @@ describe('watering program subtype dispatch', () => {
       watering_program_type: null,
       controller_id: 99,
       schedule_adjustment_ids: null,
-      seasonal_adjustment: null,
+      seasonal_adjustment_percents: null,
       smart_watering_run_time: 900,
       smart_watering_frequency_value: 3,
     });
@@ -87,7 +87,7 @@ describe('watering program subtype dispatch', () => {
       watering_program_type: null,
       controller_id: 99,
       schedule_adjustment_ids: [],
-      seasonal_adjustment: null,
+      seasonal_adjustment_percents: null,
       virtual_solar_sync_watering_run_time: 1200,
       virtual_solar_sync_watering_frequency_mode: 2,
     });

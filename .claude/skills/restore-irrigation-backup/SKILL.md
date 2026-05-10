@@ -26,6 +26,9 @@ Apply a Hydrawise snapshot file (produced by `dump_controller_snapshot`) to a co
 
 - If the user gave a file path, read it. Otherwise parse the pasted JSON.
 - Verify `snapshot_version >= 5` (older snapshots lack `_restore_recipe` and must be re-captured first; tell the user).
+- **If `snapshot_version === 5` (pre-v6), STOP immediately** with this message:
+  > "This snapshot uses pre-v6 field names (e.g. `cycle_custom_time`, `factors`, `interval`, `delay`) that are incompatible with the current server's v6 naming convention (`cycle_custom_time_minutes`, `monthly_adjustment_percents`, `interval_days`, `delay_seconds`, etc.). The embedded `_restore_recipe` args will fail Zod validation if replayed against this server. **Do not proceed.** Re-capture the snapshot using the current server first: run the `capture-irrigation-snapshot` skill, then use the new v6 snapshot file."
+  Do NOT attempt to replay a v5 recipe. Do NOT manually translate field names.
 - Extract `snapshot.controller.id`, `snapshot._restore_recipe`, and `snapshot._caveats`.
 
 ### 2. Verify the target controller
@@ -75,7 +78,7 @@ If any dependency step has not yet been successfully applied, halt with an error
 
 - **`update_zone_settings`**: if the step's args contain `null` for required fields (watering_mode, global_master_valve, watering_type, watering_frequency_mode, etc. — see the per-step `notes` field), call `get_zone_settings(zone_id)` first, take the live values for the null fields, and merge over the snapshot's non-null values. The MERGED payload is what you preview/apply.
 - **`create_sensor` referencing a custom type** (the step's `notes` say "model_id refers to the custom type created above"): look up the prior `create_custom_sensor_type` step's RESULT (the SensorModel object returned), extract the new `id`, and substitute it for the snapshot-time `model_id` in this step's args.
-- **`update_standard_program`**: the snapshot doesn't capture program_type / day_pattern / series_start / run_duration / ignore_rain_sensor — they arrive null. Call `get_program(controller_id, program_id, "Standard")` to fetch the live values, then merge the snapshot's non-null values over.
+- **`update_standard_program`**: the snapshot doesn't capture `program_type`, `day_pattern`, `run_duration` (for every zone in `zone_run_times`), or `ignore_rain_sensor` — they arrive as `null` in the recipe args. **You MUST call `get_program(controller_id, program_id, "Standard")` first**, take those fields from the live program, and merge the snapshot's non-null values over. Do NOT apply this step with null `run_duration` values — doing so silently zeros out every zone's run time with no error from Zod or the API.
 - **`create_program_start_time`**: the snapshot doesn't capture all required fields (apply_all, zones, schedules, days-of-week ints) — the recipe emits the captured `time` and `zones` (translated from `zone_ids`) plus null for everything else. Call `list_program_start_times_for_zone(zone_id)` to inspect the live state.
   - **Idempotency check** (skip if already present): match the recipe's `args.time` (HH:MM string) against each live start time's `time` field; if you find a match where the `zones` arrays overlap, the start time is already there — skip this step. Strict equality on time + any zone overlap is the right granularity (the same time can have different zone subsets, but for restore-equivalence we treat them as the same start time).
   - If no match exists, build the full payload from the snapshot's `time`/`zones` plus live patterns (apply_all, schedules, watering_type, time_type, day-of-week ints).

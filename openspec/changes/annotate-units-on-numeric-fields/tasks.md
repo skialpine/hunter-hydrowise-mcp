@@ -51,9 +51,9 @@
 
 ## 8. Refresh CLAUDE.md
 
-- [ ] 8.1 Replace the "Unit inconsistency between fields" gotcha with a "Numeric field naming convention" section.
-- [ ] 8.2 Update the snapshot version-history bullet list to add `v6: + unit-suffix renaming convention applied across all numeric fields`.
-- [ ] 8.3 Spot-check every existing CLAUDE.md mention of `cycle_custom_time` / `soak_custom_time` / `inter_zone_delay` / `factors` / `interval` and update to the suffixed names.
+- [x] 8.1 Replace the "Unit inconsistency between fields" gotcha with a "Numeric field naming convention" section.
+- [x] 8.2 Update the snapshot version-history bullet list to add `v6: + unit-suffix renaming convention applied across all numeric fields`.
+- [x] 8.3 Spot-check every existing CLAUDE.md mention of `cycle_custom_time` / `soak_custom_time` / `inter_zone_delay` / `factors` / `interval` and update to the suffixed names.
 
 ## 9. Re-capture the user's snapshot under v6
 
