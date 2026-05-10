@@ -49,7 +49,6 @@ const baseZone: ZoneRichRead = {
     },
   },
   status: { suspendedUntil: null },
-  zoneNotes: [],
 };
 
 describe('serializeZoneSettings', () => {
@@ -113,28 +112,9 @@ describe('serializeZoneSettings', () => {
     expect(serializeZoneSettings({ ...baseZone, masterValve: 7 }).master_valve_override).toBe(7);
   });
 
-  it('serializes zone_notes from the Zone read', () => {
-    const out = serializeZoneSettings({
-      ...baseZone,
-      zoneNotes: [
-        {
-          id: 99,
-          note: 'Replaced solenoid spring 2025-08-12',
-          type: 'repair',
-          pinnedToTop: true,
-          lastUpdatedAt: { value: '2025-08-12T10:00:00Z' },
-        },
-      ],
-    });
-    const notes = out.zone_notes as Array<Record<string, unknown>>;
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toEqual({
-      id: 99,
-      note: 'Replaced solenoid spring 2025-08-12',
-      type: 'repair',
-      pinned_to_top: true,
-      last_updated_at: '2025-08-12T10:00:00Z',
-    });
+  it('does not include zone_notes (notes are fetched separately by backup.ts and merged in; serializeZoneSettings does not receive them)', () => {
+    const out = serializeZoneSettings(baseZone);
+    expect(out.zone_notes).toBeUndefined();
   });
 });
 
@@ -335,7 +315,6 @@ const fakeRainSensorModel: SensorModelRead = {
   id: 12,
   name: 'Rain Sensor (normally closed wire)',
   modeType: 'STOP',
-  mode: 'STOP',
   active: true,
   offLevel: null,
   offTimer: null,
@@ -371,7 +350,6 @@ describe('serializeSensor', () => {
       model_name: 'Rain Sensor (normally closed wire)',
       sensor_type: 'LEVEL_CLOSED',
       mode_type: 'STOP',
-      mode: 'STOP',
       divisor: null,
       flow_rate: null,
       off_level: null,

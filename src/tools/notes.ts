@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { NOTE_TYPES } from '../hydrawise/api.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
-import { nonNull, serializeNote } from './serializers.js';
+import { serializeNote } from './serializers.js';
 import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
@@ -68,8 +68,8 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     },
     async ({ controller_id }) =>
       wrap('list_controller_notes', async () => {
-        const controller = await api.getController(controller_id);
-        return jsonResult(nonNull(controller.controllerNotes).map(serializeNote));
+        const notes = await api.getControllerNotes(controller_id);
+        return jsonResult(notes.map(serializeNote));
       }),
   );
 
@@ -82,8 +82,8 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     },
     async ({ zone_id }) =>
       wrap('list_zone_notes', async () => {
-        const zone = await api.getZoneFull(zone_id);
-        return jsonResult(nonNull(zone.zoneNotes).map(serializeNote));
+        const notes = await api.getZoneNotes(zone_id);
+        return jsonResult(notes.map(serializeNote));
       }),
   );
 

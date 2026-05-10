@@ -78,9 +78,6 @@ const fakeController = {
   settings: { timeZone: { name: 'America/Denver', offset: -6 }, zones: { interZoneDelay: 0 } },
   masterZone: { zoneNumber: { value: 12 }, delay: 0, postTimer: 0 },
   expanders: [],
-  controllerNotes: [
-    { id: 1, note: 'Spring tune-up done', type: 'comment', pinnedToTop: false, lastUpdatedAt: { value: '2026-04-01T10:00:00Z' } },
-  ],
   runTimeGroups: [],
   softwareVersion: '4.2.0',
   lastContactTime: { value: '2026-05-09T19:00:00Z' },
@@ -100,7 +97,6 @@ const fakeZoneFull = {
   },
   monitoringSettings: null,
   status: { suspendedUntil: null },
-  zoneNotes: [],
 };
 
 const fakeSensor = {
@@ -110,7 +106,6 @@ const fakeSensor = {
     id: 12,
     name: 'Rain Sensor (NC)',
     modeType: 'STOP' as const,
-    mode: 'STOP' as const,
     active: true,
     offLevel: null,
     offTimer: null,
@@ -139,6 +134,10 @@ function makeApp() {
     getSeasonalAdjustments: async () => [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
     getWateringTriggers: async () => null,
     getControllerSensors: async () => [fakeSensor],
+    getControllerNotes: async () => [
+      { id: 1, note: 'Spring tune-up done', type: 'comment' as const, pinnedToTop: false, lastUpdatedAt: { value: '2026-04-01T10:00:00Z' } },
+    ],
+    getZoneNotes: async () => [],
   });
   return buildApp(makeConfig(), () => buildMcpServer(api), createLogger('error'));
 }

@@ -86,7 +86,6 @@ export function serializeController(controller: Controller): Record<string, unkn
     expanders: nonNull(controller.expanders).map(serializeExpander),
     modules: nonNull(controller.hardware?.modules).map(serializeModule),
     run_time_groups: controller.runTimeGroups.map(serializeRunTimeGroup),
-    controller_notes: nonNull(controller.controllerNotes).map(serializeNote),
   };
 }
 
@@ -201,7 +200,6 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
           },
         }
       : null,
-    zone_notes: nonNull(zone.zoneNotes).map(serializeNote),
     // ADVANCED-mode zones expose a per-zone `advancedProgram` reference (the
     // `... on AdvancedWateringSettings` fragment in ZONE_FULL_QUERY). On STANDARD-mode
     // zones the fragment doesn't match, so the upstream returns null/undefined and we
@@ -370,7 +368,6 @@ export function serializeSensor(s: SensorRead): Record<string, unknown> {
       model_name: s.model.name,
       sensor_type: s.model.sensorType,
       mode_type: s.model.modeType,
-      mode: s.model.mode,
       divisor: s.model.divisor,
       flow_rate: s.model.flowRate,
       off_level: s.model.offLevel,

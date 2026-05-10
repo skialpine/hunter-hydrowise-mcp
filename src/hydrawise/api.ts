@@ -1,6 +1,7 @@
 import { HydrawiseMutationError, HydrawiseNotFoundError } from '../errors.js';
 import type { HydrawiseClient } from './client.js';
 import {
+  CONTROLLER_NOTES_QUERY,
   CONTROLLER_QUERY,
   CONTROLLER_SENSORS_QUERY,
   CONTROLLERS_QUERY,
@@ -61,6 +62,7 @@ import {
   WATERING_REPORT_QUERY,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
+  ZONE_NOTES_QUERY,
   ZONE_PAST_RUNS_QUERY,
   ZONE_QUERY,
   ZONE_RUN_SUMMARY_ANNUAL_QUERY,
@@ -304,6 +306,33 @@ export class HydrawiseApi {
       throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
     }
     return data.zone;
+  }
+
+  // controllerNotes and zoneNotes are subscription-gated: fetching them as part of
+  // CONTROLLER_FIELDS or ZONE_FULL_QUERY causes Hydrawise to null the entire parent
+  // object on free accounts. These dedicated methods let callers handle the error
+  // independently (e.g. fallback to [] in backup.ts).
+
+  async getControllerNotes(controllerId: number): Promise<ControllerNoteRead[]> {
+    const data = await this.client.query<{
+      controller: { controllerNotes: (ControllerNoteRead | null)[] | null } | null;
+    }>(CONTROLLER_NOTES_QUERY, { controllerId });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return (data.controller.controllerNotes ?? []).filter(
+      (n): n is ControllerNoteRead => n !== null,
+    );
+  }
+
+  async getZoneNotes(zoneId: number): Promise<ZoneNoteRead[]> {
+    const data = await this.client.query<{
+      zone: { zoneNotes: (ZoneNoteRead | null)[] | null } | null;
+    }>(ZONE_NOTES_QUERY, { zoneId });
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return (data.zone.zoneNotes ?? []).filter((n): n is ZoneNoteRead => n !== null);
   }
 
   async getSeasonalAdjustments(controllerId: number): Promise<number[]> {

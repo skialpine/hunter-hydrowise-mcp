@@ -27,8 +27,6 @@ export interface Controller {
   // Schema: `expanders: [Expander]` — list members may be null.
   expanders: (ExpanderRead | null)[] | null;
   runTimeGroups: RunTimeGroupRead[];
-  // Schema: `controllerNotes: [ControllerNote]!` — non-null list, members may be null.
-  controllerNotes: (ControllerNoteRead | null)[];
 }
 
 export interface GeoCoordinatesRead {
@@ -211,15 +209,6 @@ const CONTROLLER_FIELDS = /* GraphQL */ `
     id
     name
     duration
-  }
-  controllerNotes {
-    id
-    note
-    type
-    pinnedToTop
-    lastUpdatedAt {
-      value
-    }
   }
 `;
 
@@ -579,8 +568,6 @@ export interface ZoneRichRead {
   status: {
     suspendedUntil: { value: string } | null;
   };
-  // Schema: `zoneNotes: [ZoneNote]!` — non-null list, members may be null.
-  zoneNotes: (ZoneNoteRead | null)[];
 }
 
 export interface LocalizedValue {
@@ -683,6 +670,31 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
           value
         }
       }
+    }
+  }
+`;
+
+/** GraphQL: controller notes — fetched separately because controllerNotes is subscription-gated (returns a business-level GraphQL error on free accounts, which nulls the entire controller object when embedded in CONTROLLER_FIELDS). */
+export const CONTROLLER_NOTES_QUERY = /* GraphQL */ `
+  query ControllerNotes($controllerId: Int!) {
+    controller(controllerId: $controllerId) {
+      controllerNotes {
+        id
+        note
+        type
+        pinnedToTop
+        lastUpdatedAt {
+          value
+        }
+      }
+    }
+  }
+`;
+
+/** GraphQL: zone notes — fetched separately for the same subscription-gating reason as CONTROLLER_NOTES_QUERY. */
+export const ZONE_NOTES_QUERY = /* GraphQL */ `
+  query ZoneNotes($zoneId: Int!) {
+    zone(zoneId: $zoneId) {
       zoneNotes {
         id
         note
@@ -1958,7 +1970,6 @@ export interface SensorModelRead {
   id: number;
   name: string | null;
   modeType: CustomSensorModeType;
-  mode: CustomSensorModeType;
   active: boolean | null;
   offLevel: number | null;
   offTimer: number | null;
@@ -2006,7 +2017,6 @@ const SENSOR_MODEL_FIELDS = /* GraphQL */ `
   id
   name
   modeType
-  mode
   active
   offLevel
   offTimer

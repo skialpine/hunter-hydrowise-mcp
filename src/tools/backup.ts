@@ -2,10 +2,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { HydrawiseAPIError } from '../errors.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
+import type { ControllerNoteRead, ZoneNoteRead } from '../hydrawise/queries.js';
 import type { Logger } from '../logger.js';
 import {
   serializeAdvancedProgram,
   serializeController,
+  serializeNote,
   serializeProgramStartTime,
   serializeSensor,
   serializeSensorZoneRefsForZone,
@@ -66,6 +68,32 @@ export interface ControllerSnapshotV5 {
   _caveats: string[];
 }
 
+// controllerNotes and zoneNotes are subscription-gated on Hydrawise's side. When
+// included in the shared CONTROLLER_FIELDS / ZONE_FULL_QUERY they cause a business-
+// level GraphQL error that nulls the entire parent, breaking all controller queries.
+// These helpers fetch notes in isolation and swallow the subscription error so a
+// snapshot can still be captured on free accounts (notes fields come back as []).
+async function fetchControllerNotesSafe(
+  api: HydrawiseApi,
+  controllerId: number,
+): Promise<ControllerNoteRead[]> {
+  try {
+    return await api.getControllerNotes(controllerId);
+  } catch (err) {
+    if (err instanceof HydrawiseAPIError && err.message.includes('subscription')) return [];
+    throw err;
+  }
+}
+
+async function fetchZoneNotesSafe(api: HydrawiseApi, zoneId: number): Promise<ZoneNoteRead[]> {
+  try {
+    return await api.getZoneNotes(zoneId);
+  } catch (err) {
+    if (err instanceof HydrawiseAPIError && err.message.includes('subscription')) return [];
+    throw err;
+  }
+}
+
 const Input = { controller_id: z.number().int() };
 
 export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger?: Logger): void {
@@ -90,6 +118,8 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             wateringTriggers,
             startTimesByZone,
             controllerSensors,
+            controllerNotes,
+            zoneNotesByZone,
           ] = await Promise.all([
             Promise.all(
               zones.map(async (z) => ({ zone_id: z.id, settings: await api.getZoneFull(z.id) })),
@@ -108,6 +138,10 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             // Single controller-scoped sensor fetch — per-zone sensors[] cross-references
             // are derived from this same array, so no N+1 zone-fan-out.
             api.getControllerSensors(controller_id),
+            // Notes are subscription-gated; fetched separately so a business-error on
+            // one field doesn't null the entire controller or zone. Falls back to [].
+            fetchControllerNotesSafe(api, controller_id),
+            Promise.all(zones.map((z) => fetchZoneNotesSafe(api, z.id))),
           ]);
 
           // Inline full program details — dispatch on program_type. Standard programs use
@@ -173,13 +207,20 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
 
           const settingsByZone = new Map(zoneSettings.map((s) => [s.zone_id, s.settings]));
           const startsByZone = new Map(startTimesByZone.map((s) => [s.zone_id, s.start_times]));
+          const notesByZone = new Map(zones.map((z, i) => [z.id, zoneNotesByZone[i]]));
 
           const enrichedZones = zones.map((z) => {
             const summary = serializeZone(z);
             const full = settingsByZone.get(z.id);
+            const settings = full ? serializeZoneSettings(full) : null;
             return {
               ...summary,
-              settings: full ? serializeZoneSettings(full) : null,
+              settings: settings
+                ? {
+                    ...settings,
+                    zone_notes: (notesByZone.get(z.id) ?? []).map(serializeNote),
+                  }
+                : null,
               program_start_times: startsByZone.get(z.id) ?? [],
               // Per-zone sensors are derived from the controller-level sensors list rather
               // than calling getZoneSensors per-zone — same data, no extra round-trips.
@@ -194,6 +235,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             user: serializeUser(user),
             controller: {
               ...serializeController(controller),
+              controller_notes: controllerNotes.map(serializeNote),
               zones: enrichedZones,
               programs: inlinedPrograms as unknown as Array<Record<string, unknown>>,
               seasonal_adjustments: { factors: seasonalAdjustments },

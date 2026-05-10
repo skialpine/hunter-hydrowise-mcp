@@ -85,15 +85,6 @@ const fakeController: Controller = {
     },
   ],
   runTimeGroups: [{ id: 200, name: null, duration: 10 }],
-  controllerNotes: [
-    {
-      id: 5,
-      note: 'Winterized 2025-10-01',
-      type: 'repair',
-      pinnedToTop: false,
-      lastUpdatedAt: { value: '2025-10-01T08:00:00Z' },
-    },
-  ],
 };
 
 const fakeZone: Zone = { id: 100, name: 'Test Zone', number: { value: 1 } };
@@ -119,15 +110,6 @@ const fakeZoneFull: ZoneRichRead = {
     },
   },
   status: { suspendedUntil: null },
-  zoneNotes: [
-    {
-      id: 99,
-      note: 'cracked head fixed 2025-08',
-      type: 'repair',
-      pinnedToTop: false,
-      lastUpdatedAt: { value: '2025-08-12T10:00:00Z' },
-    },
-  ],
 };
 
 const fakeStandardProgram: StandardProgramRead = {
@@ -197,6 +179,14 @@ function makeApp(apiOverrides: Partial<HydrawiseApi> = {}) {
     getWateringTriggers: async () => fakeWateringTriggers,
     // Default: no sensors. Tests that exercise the sensor-capture path override this.
     getControllerSensors: async () => [],
+    // Notes are fetched separately (subscription-gated). Defaults provide one note each
+    // so tests that assert presence of notes don't need to override.
+    getControllerNotes: async () => [
+      { id: 5, note: 'Winterized 2025-10-01', type: 'repair' as const, pinnedToTop: false, lastUpdatedAt: { value: '2025-10-01T08:00:00Z' } },
+    ],
+    getZoneNotes: async () => [
+      { id: 99, note: 'cracked head fixed 2025-08', type: 'repair' as const, pinnedToTop: false, lastUpdatedAt: { value: '2025-08-12T10:00:00Z' } },
+    ],
     ...apiOverrides,
   });
   return buildApp(makeConfig(), () => buildMcpServer(api), createLogger('error'));
