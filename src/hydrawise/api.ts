@@ -86,7 +86,13 @@ import {
 } from './queries.js';
 
 export type ControllerProgramMode = 'STANDARD' | 'ADVANCED';
-export type NoteType = 'fault' | 'location' | 'repair' | 'comment';
+
+// Single source of truth for note types: the runtime constant drives the
+// compile-time union via `typeof NOTE_TYPES[number]`. Adding a new note type
+// here automatically updates both the literal union and the runtime guard
+// below — the two cannot drift.
+const NOTE_TYPES = ['fault', 'location', 'repair', 'comment'] as const;
+export type NoteType = (typeof NOTE_TYPES)[number];
 
 export interface UpdateLocationPayload {
   device_id: number;
@@ -769,10 +775,11 @@ function requireExpander(op: string, value: unknown): { id: number; name: string
   return { id: v.id, name: v.name, number: v.number };
 }
 
-const NOTE_TYPES: readonly string[] = ['fault', 'location', 'repair', 'comment'];
-
 function isNoteType(x: unknown): x is NoteType {
-  return typeof x === 'string' && NOTE_TYPES.includes(x);
+  // Cast to `readonly string[]` is a localized concession: the `as const`
+  // tuple narrows `.includes()` to NoteType arguments only, but here we are
+  // explicitly testing whether an unknown value is a NoteType.
+  return typeof x === 'string' && (NOTE_TYPES as readonly string[]).includes(x);
 }
 
 function requireNote(op: string, value: unknown): { id: number; note: string; type: NoteType; pinnedToTop: boolean; lastUpdatedAt: { value: string } | null } {
