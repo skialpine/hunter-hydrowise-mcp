@@ -5,31 +5,41 @@ TBD - created by archiving change add-schedule-management. Update Purpose after 
 ## Requirements
 ### Requirement: dump_controller_snapshot tool returns a per-controller snapshot as JSON
 
-The server SHALL expose an MCP tool named `dump_controller_snapshot` that takes a required integer `controller_id` and returns a single JSON object representing that controller's readable state. The object SHALL include `snapshot_version` (integer), `captured_at` (ISO-8601 timestamp), `server_version` (string), `user`, and `controller` (singular). The `controller` value SHALL include the controller's basic fields (id, name, online, serial_number, last_contact_time) plus arrays for `zones`, `programs`, `program_start_times`, and the objects `seasonal_adjustments` (containing a 12-element integer array) and `watering_triggers`. Each `zone` entry SHALL include the zone's basic fields plus `settings` (the readable watering settings).
+The snapshot envelope SHALL additionally include a top-level `_restore_recipe` array and a top-level `_caveats` array. The `_restore_recipe` array SHALL contain ordered restore steps, each with shape `{ order: int, tool: string, args: object, depends_on: int[], notes?: string }`. The list SHALL cover every restorable category present in the snapshot (controller config, sensors, programs, zone settings, notes), in dependency order, with each step's `args` pre-computed from the captured snapshot data. The `_caveats` array SHALL contain strings describing known restore limitations affecting the snapshot.
 
-#### Scenario: Snapshot a controller with several zones and programs
+#### Scenario: Snapshot includes a restore recipe
 
-- **WHEN** an MCP client calls `dump_controller_snapshot` with a `controller_id` of an account-owned controller
-- **THEN** the response is a JSON object whose `controller.zones` array has one entry per zone with a populated `settings` object, `controller.programs` is an array (possibly empty), `controller.program_start_times` is an array, and the top-level envelope contains `snapshot_version`, `captured_at`, `server_version`, and `user`
+- **WHEN** an MCP client calls `dump_controller_snapshot` against any populated controller
+- **THEN** the response includes `_restore_recipe` as a non-empty array of step objects, each with `order`, `tool`, `args`, `depends_on`
 
-#### Scenario: Snapshot of an unknown controller_id
+#### Scenario: Recipe encodes dependency ordering
 
-- **WHEN** an MCP client calls `dump_controller_snapshot` with a `controller_id` that does not belong to the authenticated account
-- **THEN** the tool returns an `isError: true` result indicating the controller could not be found, and does not return a partial snapshot
+- **WHEN** a snapshot includes a sensor that references a custom sensor type
+- **THEN** the recipe step that creates the sensor SHALL have a `depends_on` entry pointing at the order of the step that creates the custom sensor type
 
-#### Scenario: Authentication failure during snapshot
+#### Scenario: Recipe references only registered tool names
 
-- **WHEN** an MCP client calls `dump_controller_snapshot` and the underlying Hydrawise API rejects the credentials
-- **THEN** the tool returns an `isError: true` result categorized as an authentication failure, and does not return a partial snapshot
+- **WHEN** any step in `_restore_recipe` is inspected
+- **THEN** the `tool` field SHALL match the name of an MCP tool registered by this server
+
+#### Scenario: Caveats document known limitations
+
+- **WHEN** a snapshot's zone entries have non-empty `_unreadable_fields`
+- **THEN** the top-level `_caveats` array contains a string explicitly describing this limitation and recommending the AI handle it (e.g., "supply values explicitly or accept live values at restore time")
+
+#### Scenario: Snapshot for an empty/minimal controller still emits recipe
+
+- **WHEN** `dump_controller_snapshot` runs against a controller with no zones, no programs, no sensors
+- **THEN** `_restore_recipe` is `[]` and `_caveats` is `[]` (consistent shape, no special-casing for the AI consumer)
 
 ### Requirement: Snapshot envelope is versioned
 
-The snapshot JSON SHALL include `snapshot_version: 1` as a top-level integer field so future readers can detect format and migrate. The version SHALL be incremented whenever the shape of the snapshot changes in a backward-incompatible way.
+The snapshot JSON SHALL include `snapshot_version` as a top-level integer field as informational provenance. This change bumps the version to `3` to reflect the inclusion of the `_restore_recipe` and `_caveats` blocks.
 
-#### Scenario: Snapshot is parseable by version
+#### Scenario: Snapshot version reflects the recipe-bearing generation
 
 - **WHEN** any client reads the JSON returned by `dump_controller_snapshot`
-- **THEN** the `snapshot_version` field is present at the top level, equal to `1` for the initial implementation, and the field name is stable across calls
+- **THEN** the `snapshot_version` field is present and equal to `3`
 
 ### Requirement: Snapshot is read-only and side-effect-free
 

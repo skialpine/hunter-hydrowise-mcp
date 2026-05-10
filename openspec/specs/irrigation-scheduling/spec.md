@@ -97,24 +97,22 @@ Each write tool SHALL be prefixed `PHYSICAL ACTION:` and SHALL respect the share
 
 ### Requirement: Standard programs support full read + CRUD
 
-The server SHALL expose `list_programs(controller_id)` returning programs with a `program_type` discriminator equal to `Standard` for standard programs and `Time` / `Smart` / `VirtualSolarSync` for the watering-program subtypes. The server SHALL also expose:
+The `get_program` tool SHALL accept `program_type: 'Standard' | 'Advanced'`. For `program_type: 'Standard'`, the tool SHALL return the full StandardProgram detail (start times, day pattern, days run, monthly adjustments, periodicity, per-zone run-time groups, valid_from, valid_to, conditional adjustments) as before. **For `program_type: 'Advanced'`, the tool SHALL now return the full AdvancedProgram detail** (`id`, `name`, `advanced_program_id`, `scope`, `zone_specific`, `monthly_watering_adjustments`, `scheduling_method`, `watering_frequency`, `run_time_group`, `applies_to_zones`).
 
-- `get_program(program_id, program_type)` — returns full per-program detail; the `program_type` argument lets the server pick the right query path.
-- `create_standard_program(controller_id, ...full_payload, preview?)` — wraps `createStandardProgram`.
-- `update_standard_program(program_id, controller_id, preview?, ...full_payload)` — accepts the complete writable payload and dispatches `updateStandardProgram`.
-- `delete_standard_program(program_id, controller_id, preview?)` — wraps `deleteStandardProgram`.
+#### Scenario: Get an Advanced program by id
 
-Write tools SHALL be prefixed `PHYSICAL ACTION:`.
+- **WHEN** an MCP client calls `get_program` with `controller_id`, `program_id`, and `program_type: 'Advanced'` for a program that exists
+- **THEN** the response includes the AdvancedProgram fields including the `watering_frequency` object and `run_time_group` reference
 
-#### Scenario: List programs returns mixed types
+#### Scenario: Get a Standard program — unchanged behavior
 
-- **WHEN** an MCP client calls `list_programs` for a controller that has at least one standard program and at least one watering program
-- **THEN** the response is a JSON array with each entry containing a `program_type` field whose value is one of `Standard`, `Time`, `Smart`, `VirtualSolarSync`
+- **WHEN** an MCP client calls `get_program` with `program_type: 'Standard'`
+- **THEN** the response shape is identical to the prior behavior (start_times, days_run, periodicity, per_zone_run_times, etc.)
 
-#### Scenario: Update a standard program with preview
+#### Scenario: Program type mismatch
 
-- **WHEN** an MCP client calls `update_standard_program` with the program id and full writable payload and `preview: true`
-- **THEN** the response contains the GraphQL operation name and the variables that would be dispatched, and Hydrawise's `updateStandardProgram` is not invoked
+- **WHEN** an MCP client calls `get_program` with `program_type: 'Advanced'` against a `program_id` that is actually a StandardProgram (or vice-versa)
+- **THEN** the tool returns a `not_found`-class error indicating the program does not exist as the requested type
 
 ### Requirement: Watering programs support full CRUD across the three subtypes
 
