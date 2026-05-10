@@ -73,8 +73,15 @@ const fakeController: Controller = {
     locality: 'Centennial',
   },
   settings: {
+    hibernateStatus: false,
     timeZone: { name: 'America/Denver', offset: -25200 },
     zones: { interZoneDelay: 0, masterZone: null },
+  },
+  status: {
+    online: true,
+    summary: 'All good!',
+    icon: 'ok.png',
+    accumulatedWaterSavings: 100,
   },
   masterZone: { zoneNumber: { value: 0 }, delay: 0, postTimer: 0 },
   expanders: [
@@ -223,12 +230,12 @@ async function callTool(app: ReturnType<typeof makeApp>, toolName: string, args:
 }
 
 describe('dump_controller_snapshot v6', () => {
-  it('returns snapshot_version 6', async () => {
+  it('returns snapshot_version 7', async () => {
     const app = makeApp();
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBeFalsy();
     const snap = JSON.parse(resp.result!.content[0]!.text) as { snapshot_version: number };
-    expect(snap.snapshot_version).toBe(6);
+    expect(snap.snapshot_version).toBe(7);
   });
 
   it('controller block includes location, time_zone, master_valve, expanders, modules, run_time_groups, controller_notes, device_id', async () => {
@@ -542,5 +549,29 @@ describe('dump_controller_snapshot v6', () => {
     });
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBe(true);
+  });
+
+  // Task 5.3: hibernated controller snapshot includes hibernation caveat in _caveats
+  it('includes hibernation caveat in _caveats when controller is hibernated', async () => {
+    const app = makeApp({
+      getController: async () => ({
+        ...fakeController,
+        settings: { ...fakeController.settings!, hibernateStatus: true },
+        status: { online: false, summary: 'Sleeping', icon: 'moon.png', accumulatedWaterSavings: 100 },
+      }),
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as { _caveats: string[] };
+    expect(snap._caveats.some((c) => c.includes('hibernated'))).toBe(true);
+  });
+
+  // Task 5.4: non-hibernated controller snapshot does NOT include hibernation caveat
+  it('does NOT include hibernation caveat in _caveats when controller is not hibernated', async () => {
+    const app = makeApp();
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as { _caveats: string[] };
+    expect(snap._caveats.some((c) => c.includes('hibernated'))).toBe(false);
   });
 });

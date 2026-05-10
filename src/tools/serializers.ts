@@ -130,6 +130,14 @@ export function serializeController(controller: Controller): Record<string, unkn
     location: controller.location ? serializeLocation(controller.location) : null,
     time_zone: controller.settings?.timeZone ? serializeTimeZone(controller.settings.timeZone) : null,
     inter_zone_delay_seconds: controller.settings?.zones?.interZoneDelay ?? null,
+    // hibernateStatus: Boolean (nullable) — null on older firmware; optional-chain the settings parent.
+    // Do NOT coerce null to false: null means "unknown / not applicable", false means "not hibernated".
+    hibernate_status: controller.settings?.hibernateStatus ?? null,
+    // ControllerStatus is non-null per schema; no optional chaining needed on the status parent.
+    status_summary: controller.status.summary,
+    status_icon: controller.status.icon,
+    // Unit: assumed gallons for US accounts (probed on US dev account: value=100). Metric accounts may return liters.
+    accumulated_water_savings_gallons: controller.status.accumulatedWaterSavings,
     master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
     expanders: nonNull(controller.expanders).map(serializeExpander),
     modules: nonNull(controller.hardware?.modules).map(serializeModule),

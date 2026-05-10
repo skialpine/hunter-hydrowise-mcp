@@ -133,6 +133,8 @@ export interface SnapshotForRecipe {
   controller: {
     id: number;
     program_mode?: string | null;
+    // Boolean (nullable) — null means older firmware / unknown; true means hibernated at capture time.
+    hibernate_status?: boolean | null;
     location?: { address: string | null; latitude: number | null; longitude: number | null } | null;
     master_valve?: { zone_number: number | null } | null;
     seasonal_adjustments: { monthly_adjustment_percents: number[] };
@@ -163,6 +165,13 @@ export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
   if (snapshot.snapshot_version < 6) {
     caveats.push(
       `This snapshot was captured by server version ${snapshot.snapshot_version} (pre-v6). The _restore_recipe args use the old un-suffixed field names (e.g. cycle_custom_time, factors, interval) which are incompatible with the current server's v6 naming convention. Do NOT replay this snapshot's recipe against the current server — field names will fail Zod validation. Use the server version that captured this snapshot, or manually translate field names to the v6 convention.`,
+    );
+  }
+
+  // Caveat: controller was hibernated at capture time — scheduler was not running.
+  if (c.hibernate_status === true) {
+    caveats.push(
+      'Controller was hibernated when this snapshot was captured. The scheduler was not running; some live values (seasonal adjustments, sensor states) may reflect a suspended baseline. Verify actual state after waking before restoring.',
     );
   }
 

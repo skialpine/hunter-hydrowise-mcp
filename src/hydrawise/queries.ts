@@ -9,6 +9,8 @@ export interface Controller {
   // deviceId is required by location mutations (updateLocation, updateLocationCoordinates) — distinct from id.
   deviceId: number;
   name: string | null;
+  // Top-level online: Boolean (nullable) — Wi-Fi connectivity only, not scheduler state.
+  // Distinct from ControllerStatus.online (non-null, inside status { }).
   online: boolean | null;
   softwareVersion: string | null;
   programMode: 'STANDARD' | 'ADVANCED' | null;
@@ -23,6 +25,8 @@ export interface Controller {
   lastContactTime: { value: string } | null;
   location: LocationRead | null;
   settings: ControllerSettingsRead | null;
+  // ControllerStatus is non-null per schema — no optional chaining needed on `status` itself.
+  status: ControllerStatusRead;
   masterZone: MasterValveRead | null;
   // Schema: `expanders: [Expander]` — list members may be null.
   expanders: (ExpanderRead | null)[] | null;
@@ -60,6 +64,17 @@ export interface ControllerSettingsRead {
     interZoneDelay: number;
     masterZone: MasterValveRead | null;
   } | null;
+  // Schema: Boolean (nullable) — null on older firmware that doesn't expose this field.
+  hibernateStatus: boolean | null;
+}
+
+export interface ControllerStatusRead {
+  online: boolean;
+  summary: string;
+  icon: string;
+  // Schema: Int! — unit is account-preference-dependent (gallons on US accounts, liters elsewhere).
+  // Probed on US dev account (Heller Tufts): value = 100, assumed gallons.
+  accumulatedWaterSavings: number;
 }
 
 export interface ExpanderRead {
@@ -168,6 +183,7 @@ const CONTROLLER_FIELDS = /* GraphQL */ `
     locality
   }
   settings {
+    hibernateStatus
     timeZone {
       name
       offset
@@ -182,6 +198,12 @@ const CONTROLLER_FIELDS = /* GraphQL */ `
         postTimer
       }
     }
+  }
+  status {
+    online
+    summary
+    icon
+    accumulatedWaterSavings
   }
   masterZone {
     zoneNumber {

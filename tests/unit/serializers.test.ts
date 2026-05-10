@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   AdvancedProgramRead,
+  Controller,
   ControllerNoteRead,
   ExpanderRead,
   LocationRead,
@@ -15,6 +16,7 @@ import type {
 import {
   serializeAdvancedProgram,
   serializeAdvancedProgramReference,
+  serializeController,
   serializeExpander,
   serializeLocation,
   serializeNote,
@@ -561,5 +563,72 @@ describe('serializeZoneSettings — advanced_program field', () => {
   it('emits advanced_program: null when wateringSettings is entirely absent', () => {
     const out = serializeZoneSettings({ ...baseZone, wateringSettings: null });
     expect(out.advanced_program).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serializeController
+// ---------------------------------------------------------------------------
+
+const baseController: Controller = {
+  id: 317416,
+  deviceId: 11111,
+  name: 'Test Controller',
+  online: true,
+  softwareVersion: '1.2.3',
+  programMode: 'STANDARD',
+  hardware: null,
+  lastContactTime: null,
+  location: null,
+  settings: {
+    hibernateStatus: false,
+    timeZone: null,
+    zones: null,
+  },
+  status: {
+    online: true,
+    summary: 'All good!',
+    icon: 'ok.png',
+    accumulatedWaterSavings: 100,
+  },
+  masterZone: null,
+  expanders: null,
+  runTimeGroups: [],
+};
+
+describe('serializeController', () => {
+  it('serializes all new fields with correct names and values', () => {
+    const out = serializeController({
+      ...baseController,
+      settings: { hibernateStatus: true, timeZone: null, zones: null },
+      status: { online: true, summary: 'Sleeping', icon: 'moon.png', accumulatedWaterSavings: 250 },
+    });
+    expect(out.hibernate_status).toBe(true);
+    expect(out.status_summary).toBe('Sleeping');
+    expect(out.status_icon).toBe('moon.png');
+    expect(out.accumulated_water_savings_gallons).toBe(250);
+  });
+
+  it('serializes non-hibernated controller with hibernate_status: false', () => {
+    const out = serializeController(baseController);
+    expect(out.hibernate_status).toBe(false);
+    expect(out.status_summary).toBe('All good!');
+    expect(out.status_icon).toBe('ok.png');
+    expect(out.accumulated_water_savings_gallons).toBe(100);
+  });
+
+  // Task 5.2: null-path (a) — settings parent is null (older firmware)
+  it('emits hibernate_status: null when settings is null (older firmware, no settings block)', () => {
+    const out = serializeController({ ...baseController, settings: null });
+    expect(out.hibernate_status).toBeNull();
+  });
+
+  // Task 5.2: null-path (b) — settings present but hibernateStatus field is null
+  it('emits hibernate_status: null when settings.hibernateStatus is null (field absent on firmware)', () => {
+    const out = serializeController({
+      ...baseController,
+      settings: { hibernateStatus: null, timeZone: null, zones: null },
+    });
+    expect(out.hibernate_status).toBeNull();
   });
 });

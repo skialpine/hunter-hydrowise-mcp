@@ -13,7 +13,7 @@ import {
 
 function makeMinimalSnapshot(overrides: Partial<SnapshotForRecipe['controller']> = {}): SnapshotForRecipe {
   return {
-    snapshot_version: 6,
+    snapshot_version: 7,
     controller: {
       id: 317416,
       program_mode: 'STANDARD',
@@ -580,6 +580,21 @@ describe('buildRestoreCaveats', () => {
       }),
     );
     expect(caveats.some((c) => c.includes('captured with units') && c.includes('F') && c.includes('mph'))).toBe(true);
+  });
+
+  it('emits a hibernation caveat when hibernate_status is true', () => {
+    const caveats = buildRestoreCaveats(makeMinimalSnapshot({ hibernate_status: true }));
+    expect(caveats.some((c) => c.includes('hibernated'))).toBe(true);
+  });
+
+  it('does NOT emit a hibernation caveat when hibernate_status is false', () => {
+    const caveats = buildRestoreCaveats(makeMinimalSnapshot({ hibernate_status: false }));
+    expect(caveats.some((c) => c.includes('hibernated'))).toBe(false);
+  });
+
+  it('does NOT emit a hibernation caveat when hibernate_status is null', () => {
+    const caveats = buildRestoreCaveats(makeMinimalSnapshot({ hibernate_status: null }));
+    expect(caveats.some((c) => c.includes('hibernated'))).toBe(false);
   });
 });
 
