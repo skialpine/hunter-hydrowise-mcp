@@ -93,9 +93,10 @@ Several fields lack documentation in the upstream schema:
 
 | Field | Likely unit | Confidence | Verification path |
 |---|---|---|---|
-| `interZoneDelay` (Int!) | seconds | medium | Set to known value via GUI, observe |
-| `MasterValve.delay`, `MasterValve.postTimer` | seconds | medium | Same |
-| `Sensor.delay`, `Sensor.offTimer` | seconds | low | Same |
+| `interZoneDelay` (Int!) | seconds | **VERIFIED** | GUI "Edit Valve Delays" labels field "seconds"; confirmed 2026-05-09 |
+| `MasterValve.delay` | seconds | **VERIFIED** | GUI "Edit Valve Delays" labels field "seconds"; confirmed 2026-05-09 |
+| `MasterValve.postTimer` | seconds | medium | Not shown in "Edit Valve Delays" screenshot; pending probe |
+| `Sensor.delay`, `Sensor.offTimer` | seconds | **VERIFIED** | "Add Custom Sensor Type" GUI shows seconds dropdown (default) + helper text "Minimum number of seconds"; confirmed 2026-05-09 |
 | `StandardProgram.interval` | days | high | GUI labels "every N days" |
 | `StandardProgram.{validFrom, validTo, seriesStart}` | epoch seconds | high | Hydrawise's other timestamp pattern |
 | `fixedWateringFrequency` (default 60) | minutes? | medium | Probe + cross-check `WateringFrequency.label` |

@@ -27,7 +27,7 @@ Apply a Hydrawise snapshot file (produced by `dump_controller_snapshot`) to a co
 - If the user gave a file path, read it. Otherwise parse the pasted JSON.
 - Check `snapshot_version`:
   - **`< 5`**: STOP — this snapshot predates `_restore_recipe` and cannot be replayed. Tell the user to re-capture using the current server.
-  - **`5` (pre-v6)**: STOP immediately with this message:
+  - **`>= 5 and < 6` (pre-v6)**: STOP immediately with this message:
     > "This snapshot uses pre-v6 field names (e.g. `cycle_custom_time`, `factors`, `interval`, `delay`) that are incompatible with the current server's v6 naming convention (`cycle_custom_time_minutes`, `monthly_adjustment_percents`, `interval_days`, `delay_seconds`, etc.). The embedded `_restore_recipe` args will fail Zod validation if replayed against this server. **Do not proceed.** Re-capture the snapshot using the current server first: run the `capture-irrigation-snapshot` skill, then use the new v6 snapshot file."
     Do NOT attempt to replay a v5 recipe. Do NOT manually translate field names.
   - **`>= 6`**: proceed.
