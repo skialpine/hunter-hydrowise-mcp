@@ -53,13 +53,12 @@ export HYDRAWISE_USERNAME=you@example.com
 export HYDRAWISE_PASSWORD=***
 npm start
 
-# Option C: create a .env file in the project root, then start
+# Option C: copy the .env.example template, edit it, then start.
+#   .env.example is tracked in git as a template; .env is gitignored.
 #   .env is auto-loaded only when stdin is a TTY (so MCP-client-supplied
-#   env still wins in production)
-cat > .env <<'EOF'
-HYDRAWISE_USERNAME=you@example.com
-HYDRAWISE_PASSWORD=***
-EOF
+#   env still wins in production).
+cp .env.example .env
+$EDITOR .env   # fill in HYDRAWISE_USERNAME and HYDRAWISE_PASSWORD
 npm start
 ```
 
