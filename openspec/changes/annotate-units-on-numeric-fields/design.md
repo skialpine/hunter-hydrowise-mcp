@@ -99,8 +99,8 @@ Several fields lack documentation in the upstream schema:
 | `Sensor.delay`, `Sensor.offTimer` | seconds | **VERIFIED** | "Add Custom Sensor Type" GUI shows seconds dropdown (default) + helper text "Minimum number of seconds"; confirmed 2026-05-09 |
 | `StandardProgram.interval` | days | **VERIFIED** | GUI "Interval watering" dropdown shows "days" label; `get_program` returns `periodicity.period: 3` for a 3-day interval; confirmed 2026-05-09 |
 | `StandardProgram.{validFrom, validTo, seriesStart}` | epoch seconds | high | Hydrawise's other timestamp pattern |
-| `fixedWateringFrequency` (default 60) | minutes? | medium | Probe + cross-check `WateringFrequency.label` |
-| `virtualSolarSyncWateringFrequency` (default 60) | minutes? | medium | Same |
+| `fixedWateringFrequency` (default 60) | seconds | **VERIFIED** | Created temp WateringProgram with `fixedWateringFrequencyMode=2, value=2`; read back `period: {value:2, label:"43200 times per day"}` — 86400/2=43200 confirms seconds; same pattern as smart (86400="Once a day"); confirmed 2026-05-10 |
+| `virtualSolarSyncWateringFrequency` (default 60) | seconds | high | Same unit family as fixed/smart (all zone-level frequency fields); default 60s matches fixed default; not directly probed but inferred |
 
 The user has live controller access. The implementation tasks include a probe step that BLOCKS the rename of these specific fields until the unit is verified. Better to ship six confirmed renames and leave one as `field_name` (with a TODO) than enshrine a wrong unit.
 

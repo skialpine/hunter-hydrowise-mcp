@@ -62,9 +62,9 @@ interface SnapshotZoneSettings {
   watering_type: number | null;
   run_time_minutes: number | null;
   watering_frequency_mode: number | null;
-  fixed_watering_frequency_minutes: number | null;
+  fixed_watering_frequency_seconds: number | null;
   smart_watering_frequency_seconds: number | null;
-  virtual_solar_sync_watering_frequency_minutes: number | null;
+  virtual_solar_sync_watering_frequency_seconds: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
   monthly_adjustment_percents: number[] | null;
@@ -493,9 +493,9 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         watering_type: s.watering_type,
         run_time_minutes: s.run_time_minutes,
         watering_frequency_mode: s.watering_frequency_mode,
-        fixed_watering_frequency_minutes: s.fixed_watering_frequency_minutes,
+        fixed_watering_frequency_seconds: s.fixed_watering_frequency_seconds,
         smart_watering_frequency_seconds: s.smart_watering_frequency_seconds,
-        virtual_solar_sync_watering_frequency_minutes: s.virtual_solar_sync_watering_frequency_minutes,
+        virtual_solar_sync_watering_frequency_seconds: s.virtual_solar_sync_watering_frequency_seconds,
         run_next_available_start_time: s.run_next_available_start_time,
         pre_configured_watering_schedule_id: s.pre_configured_watering_schedule_id,
         cycle_soak_enable: s.cycle_soak_enable,

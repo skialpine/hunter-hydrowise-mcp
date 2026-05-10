@@ -376,9 +376,9 @@ export interface ZoneWritable {
   watering_type: number;
   run_time_minutes: number | null;
   watering_frequency_mode: number;
-  fixed_watering_frequency_minutes: number | null;
+  fixed_watering_frequency_seconds: number | null;
   smart_watering_frequency_seconds: number | null;
-  virtual_solar_sync_watering_frequency_minutes: number | null;
+  virtual_solar_sync_watering_frequency_seconds: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
   cycle_soak_enable: boolean | null;
@@ -1958,9 +1958,9 @@ export interface ZoneCreatePayload {
   watering_type: number;
   run_time_minutes: number | null;
   watering_frequency_mode: number;
-  fixed_watering_frequency_minutes: number | null;
+  fixed_watering_frequency_seconds: number | null;
   smart_watering_frequency_seconds: number | null;
-  virtual_solar_sync_watering_frequency_minutes: number | null;
+  virtual_solar_sync_watering_frequency_seconds: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
   cycle_soak_enable: boolean | null;
