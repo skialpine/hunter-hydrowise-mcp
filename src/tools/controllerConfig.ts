@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ConfigError } from '../errors.js';
-import type { HydrawiseApi } from '../hydrawise/api.js';
+import { CONTROLLER_PROGRAM_MODES, type HydrawiseApi } from '../hydrawise/api.js';
+import { MONITORING_METHODS } from '../hydrawise/queries.js';
 import type { Logger } from '../logger.js';
 import {
   serializeLocation,
@@ -11,8 +12,10 @@ import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
 
-const MonitoringMethodEnum = z.enum(['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const);
-const ProgramModeEnum = z.enum(['STANDARD', 'ADVANCED'] as const);
+// Zod enums derived from the runtime tuples in queries.ts / api.ts — single source
+// of truth (see NOTE_TYPES / CUSTOM_SENSOR_TYPES for the same idiom).
+const MonitoringMethodEnum = z.enum(MONITORING_METHODS);
+const ProgramModeEnum = z.enum(CONTROLLER_PROGRAM_MODES);
 
 const UpdateLocationInput = {
   controller_id: z.number().int(),

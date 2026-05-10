@@ -368,9 +368,12 @@ export function serializeSensor(s: SensorRead): Record<string, unknown> {
       delay: s.model.delay,
       active: s.model.active,
       input_label: s.input.label,
-      // SelectedOption wrapper is non-null per schema (SensorModel.type: SelectedOption!),
-      // but the inner label IS nullable.
-      type_label: s.model.type.label,
+      // SelectedOption wrapper is `SelectedOption!` per the live schema, but Hydrawise
+      // demonstrably violates its own `!` declarations (see CLAUDE.md gotcha re
+      // `Zone.status.lastRun` lying as DateTime!). Defensive optional chain: a single
+      // misbehaving sensor must not crash the whole snapshot. Inner `.label` is genuinely
+      // nullable per schema either way.
+      type_label: s.model.type?.label ?? null,
       category: s.model.category ? { id: s.model.category.id, name: s.model.category.name } : null,
       // customerId on the model is the tell for "this is a custom (account-owned) type" vs.
       // built-in (null/0). Restore needs this signal to know whether to recreate the type first.

@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { ConfigError } from '../errors.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
-import type { WateringProgramWritable } from '../hydrawise/queries.js';
+import {
+  MONITORING_METHODS,
+  WATERING_PROGRAM_TYPES,
+  type WateringProgramWritable,
+} from '../hydrawise/queries.js';
 import {
   serializeProgramStartTime,
   serializeWateringTriggers,
@@ -15,7 +19,9 @@ const PHYSICAL = 'PHYSICAL ACTION:';
 
 const ZoneIdInput = { zone_id: z.number().int() };
 
-const MonitoringMethodEnum = z.enum(['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const);
+// Zod enum derived from the MONITORING_METHODS tuple in queries.ts — single source
+// of truth (see NOTE_TYPES / CUSTOM_SENSOR_TYPES for the same idiom).
+const MonitoringMethodEnum = z.enum(MONITORING_METHODS);
 
 // Required fields match updateZoneAdvanced's Int!/String!/[Int]! args. Optional fields default to null on dispatch; Hydrawise applies its schema-level defaults (cycleSoakEnable=false, factors=[], etc.).
 const ZoneWritableShape = {
@@ -162,7 +168,8 @@ const DeleteStandardProgramInput = {
   preview: z.boolean().optional(),
 };
 
-const WateringProgramTypeEnum = z.enum(['Time', 'Smart', 'VirtualSolarSync'] as const);
+// Zod enum derived from the WATERING_PROGRAM_TYPES tuple in queries.ts.
+const WateringProgramTypeEnum = z.enum(WATERING_PROGRAM_TYPES);
 
 const WateringProgramBaseShape = {
   program_type: WateringProgramTypeEnum,

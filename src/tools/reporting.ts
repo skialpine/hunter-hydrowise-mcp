@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { HydrawiseApi } from '../hydrawise/api.js';
+import { RUN_SUMMARY_PERIODS, type HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
 import { jsonResult, parseUnixTimestamp, runTool, validateRunSummaryArgs } from './_helpers.js';
 import { serializeRunEvent, serializeRunSummaryDetails, serializeScheduledZoneRun } from './serializers.js';
@@ -72,7 +72,8 @@ export function registerReportingTools(server: McpServer, api: HydrawiseApi, log
         'CURRENT_WEEK requires no extra args.',
       inputSchema: {
         ...ZoneIdInput,
-        period: z.enum(['CURRENT_WEEK', 'WEEK', 'MONTH', 'YEAR']),
+        // Zod enum derived from RUN_SUMMARY_PERIODS in api.ts — single source of truth.
+        period: z.enum(RUN_SUMMARY_PERIODS),
         start_week: z.number().int().optional(),
         end_week: z.number().int().optional(),
         start_month: z.number().int().optional(),

@@ -101,7 +101,10 @@ import {
   type ZoneWritable,
 } from './queries.js';
 
-export type ControllerProgramMode = 'STANDARD' | 'ADVANCED';
+// Single source of truth for the controller program-mode enum. Consumed by the
+// MCP tool layer's Zod schemas via `z.enum(CONTROLLER_PROGRAM_MODES)`.
+export const CONTROLLER_PROGRAM_MODES = ['STANDARD', 'ADVANCED'] as const;
+export type ControllerProgramMode = (typeof CONTROLLER_PROGRAM_MODES)[number];
 
 // Single source of truth for note types: the runtime constant drives the
 // compile-time union via `typeof NOTE_TYPES[number]`. Exported so the MCP tool
@@ -136,7 +139,10 @@ export interface NotePayload {
   pinned_to_top?: boolean;
 }
 
-export type RunSummaryPeriod = 'CURRENT_WEEK' | 'WEEK' | 'MONTH' | 'YEAR';
+// Single source of truth for the run-summary period enum. Consumed by the MCP
+// tool layer's Zod schemas via `z.enum(RUN_SUMMARY_PERIODS)`.
+export const RUN_SUMMARY_PERIODS = ['CURRENT_WEEK', 'WEEK', 'MONTH', 'YEAR'] as const;
+export type RunSummaryPeriod = (typeof RUN_SUMMARY_PERIODS)[number];
 
 export type RunSummaryArgs =
   | { period: 'CURRENT_WEEK' }

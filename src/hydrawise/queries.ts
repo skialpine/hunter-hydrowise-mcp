@@ -368,7 +368,11 @@ export const RESUME_ALL_ZONES_MUTATION = /* GraphQL */ `
 
 // Schedule management
 
-export type MonitoringMethod = 'MANUAL' | 'LEARN_FROM_NEXT_RUN';
+// Single source of truth for the monitoring method enum (see NOTE_TYPES /
+// CUSTOM_SENSOR_TYPES in this file for the same idiom). Consumed by the MCP
+// tool layer's Zod schemas via `z.enum(MONITORING_METHODS)`.
+export const MONITORING_METHODS = ['MANUAL', 'LEARN_FROM_NEXT_RUN'] as const;
+export type MonitoringMethod = (typeof MONITORING_METHODS)[number];
 
 // Mirrors updateZoneAdvanced. cycle_soak_enable and run_next_available_start_time are Boolean (the deprecated updateZone took Int).
 export interface ZoneWritable {
@@ -474,7 +478,10 @@ export interface StandardProgramWritable {
   ignore_rain_sensor: boolean | null;
 }
 
-export type WateringProgramType = 'Time' | 'Smart' | 'VirtualSolarSync';
+// Single source of truth for the watering-program subtype discriminator. Consumed
+// by the MCP tool layer's Zod schemas via `z.enum(WATERING_PROGRAM_TYPES)`.
+export const WATERING_PROGRAM_TYPES = ['Time', 'Smart', 'VirtualSolarSync'] as const;
+export type WateringProgramType = (typeof WATERING_PROGRAM_TYPES)[number];
 
 interface WateringProgramBase {
   program_id?: number;
@@ -1846,9 +1853,11 @@ export interface SensorModelRead {
   flowRate: number | null;
   customerId: number | null;
   sensorType: CustomSensorTypeEnum | null;
-  // `type: SelectedOption!` per the live schema (line 367) — non-null. The serializer
-  // still uses optional chaining defensively when extracting `.label`, which is fine
-  // (label IS nullable inside the SelectedOption), but the wrapper itself is guaranteed.
+  // `type: SelectedOption!` per the live schema (line 367) — declared non-null. We type
+  // it as non-null to match the schema contract, but consumers must still access `.label`
+  // defensively (`s.model.type?.label`) because Hydrawise demonstrably lies about `!`
+  // declarations elsewhere — see CLAUDE.md gotcha re `Zone.status.lastRun` returning
+  // null despite `DateTime!`. Inner `.label` is genuinely nullable per the schema.
   type: { value: number; label: string | null };
   category: { id: number; name: string } | null;
 }
