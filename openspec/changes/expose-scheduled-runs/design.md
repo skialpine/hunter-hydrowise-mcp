@@ -25,7 +25,10 @@ All `startTime: DateTime!` and `endTime: DateTime!` fields are object types requ
 - Window defaults to now → now+7d (Unix epoch seconds) when `from`/`until` are omitted.
 - Proper unit suffixes on all `ScheduledZoneRun` numeric fields.
 - Fan-out tool uses per-zone queries to avoid the `Controller.zones { status }` 500.
-- Validation error when `from > until`.
+- `get_controller_schedule` returns an array of `{ zone_id, zone_name, zone_number, runs[] }` — not a keyed map — so callers get zone name alongside run data without a secondary lookup, and integer zone IDs aren't used as JSON object keys.
+- Fan-out fails fast (via `Promise.all`) if any zone query errors — no silent partial results.
+- Zone-not-found on single-zone tools returns `api_error`, not `null` / `[]`.
+- Validation error when `from >= until`, including when caller supplies only `until_epoch_seconds` in the past.
 
 **Non-Goals:**
 - Modifying past-run tools (`get_watering_report`, `get_zone_run_history`).
@@ -43,11 +46,13 @@ All `startTime: DateTime!` and `endTime: DateTime!` fields are object types requ
 
 ### Fan-out strategy for `get_controller_schedule`
 
-**Decision**: Issue one `Zone.runsBetween(from, until)` query per zone sequentially (or in parallel limited by concurrency). Do NOT select `status { nextRun }` inside `Controller.zones { ... }`.
+**Decision**: Issue one `Zone.runsBetween(from, until)` query per zone via `Promise.all`. Do NOT select `status { nextRun }` inside `Controller.zones { ... }`. If any zone query fails, `Promise.all` rejects and the entire tool call returns `api_error` — no partial results with silently-missing zones.
 
 **Rationale**: The existing gotcha is that `Zone.status.{lastRun, nextRun}` null-in-bulk causes server-side 500s. `runsBetween` returns `[]` for zones with no upcoming runs — this is safe in bulk because it is not a nullable scalar inside a non-null parent; it is a list type. Probe the live API on an account with zones that have no upcoming runs to confirm before shipping.
 
-**Alternative considered**: Use `Zone.scheduledRuns.runs[]` inside `Controller.zones` — rejected until the bulk-null behavior of `scheduledRuns` is confirmed safe (not yet tested).
+**Partial failure behavior**: `Promise.allSettled` is explicitly rejected because a silently-absent zone is indistinguishable from a zone with no runs (`runs: []`), which violates the "all zones SHALL appear" spec requirement and makes data loss invisible to callers.
+
+**Alternative considered**: Use `Zone.scheduledRuns.runs[]` inside `Controller.zones` — rejected until the bulk-null behavior of `scheduledRuns` is confirmed safe (not yet tested). If task 1.2 probe confirms safety, this becomes viable and eliminates the N-queries cost.
 
 ### Default window
 
