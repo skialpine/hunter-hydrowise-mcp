@@ -97,7 +97,7 @@ Several fields lack documentation in the upstream schema:
 | `MasterValve.delay` | seconds | **VERIFIED** | GUI "Edit Valve Delays" labels field "seconds"; confirmed 2026-05-09 |
 | `MasterValve.postTimer` | seconds | medium | Not shown in "Edit Valve Delays" screenshot; pending probe |
 | `Sensor.delay`, `Sensor.offTimer` | seconds | **VERIFIED** | "Add Custom Sensor Type" GUI shows seconds dropdown (default) + helper text "Minimum number of seconds"; confirmed 2026-05-09 |
-| `StandardProgram.interval` | days | high | GUI labels "every N days" |
+| `StandardProgram.interval` | days | **VERIFIED** | GUI "Interval watering" dropdown shows "days" label; `get_program` returns `periodicity.period: 3` for a 3-day interval; confirmed 2026-05-09 |
 | `StandardProgram.{validFrom, validTo, seriesStart}` | epoch seconds | high | Hydrawise's other timestamp pattern |
 | `fixedWateringFrequency` (default 60) | minutes? | medium | Probe + cross-check `WateringFrequency.label` |
 | `virtualSolarSyncWateringFrequency` (default 60) | minutes? | medium | Same |
