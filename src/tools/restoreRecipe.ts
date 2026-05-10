@@ -539,7 +539,9 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           // Many of these are null in the snapshot (read schema doesn't expose them).
           // The AI must merge with live state before applying — see _caveats and notes.
           watering_mode: s.watering_mode,
-          global_master_valve: s.global_master_valve,
+          // master_valve_override holds the readable zone.masterValve value; map it to the
+          // tool's global_master_valve input (same semantics, different key names).
+          global_master_valve: s.master_valve_override,
           schedule_adjustment_ids: s.schedule_adjustment_ids ?? [],
           watering_adjustment_percent: s.watering_adjustment_percent,
           watering_type: s.watering_type,

@@ -27,7 +27,10 @@ import type {
 // Constrained to `keyof ZoneWritable` so adding/renaming a writable field forces a compile error here.
 const ZONE_UNREADABLE_FIELDS = [
   'watering_mode',
-  'global_master_valve',
+  // global_master_valve is NOT listed here — it is readable as master_valve_override
+  // (zone.masterValve), and the recipe builder uses that value for both STANDARD and ADVANCED
+  // restore steps. Listing it as unreadable was incorrect and caused every restore recipe to
+  // emit global_master_valve: null → immediate Zod rejection on apply.
   'schedule_adjustment_ids',
   'watering_type',
   'run_time_minutes',

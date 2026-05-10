@@ -377,7 +377,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
               sensor_ids: null,
               reusable_schedule: null,
               reusable_schedule_name: null,
-              _unreadable_fields: ['global_master_valve'],
+              _unreadable_fields: [],
             },
           },
         ],
@@ -492,7 +492,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
               sensor_ids: null,
               reusable_schedule: null,
               reusable_schedule_name: null,
-              _unreadable_fields: ['watering_mode', 'global_master_valve', 'watering_type', 'watering_frequency_mode'],
+              _unreadable_fields: ['watering_mode', 'watering_type', 'watering_frequency_mode'],
             },
           },
         ],
@@ -502,6 +502,8 @@ describe('buildRestoreRecipe — programs and zones', () => {
     expect(zoneStep).toBeDefined();
     expect(zoneStep!.args).toHaveProperty('watering_mode');
     expect(zoneStep!.args).toHaveProperty('watering_type');
+    // global_master_valve must be populated from master_valve_override, not s.global_master_valve.
+    expect(zoneStep!.args.global_master_valve).toBe(-1);
     expect(recipe.map((s) => s.tool)).not.toContain('update_zone_standard');
   });
 });
@@ -579,7 +581,7 @@ describe('buildRestoreCaveats', () => {
               sensor_ids: null,
               reusable_schedule: null,
               reusable_schedule_name: null,
-              _unreadable_fields: ['watering_mode', 'global_master_valve'],
+              _unreadable_fields: ['watering_mode'],
             },
           },
         ],
