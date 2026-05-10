@@ -6,6 +6,8 @@ import type { Logger } from '../logger.js';
 import {
   serializeController,
   serializeProgramStartTime,
+  serializeSensor,
+  serializeSensorZoneRefsForZone,
   serializeStandardProgram,
   serializeUser,
   serializeWateringTriggers,
@@ -14,10 +16,15 @@ import {
 } from './serializers.js';
 import { jsonResult, runTool } from './_helpers.js';
 
-export const SNAPSHOT_VERSION = 2;
+// Snapshot version bumped to 3 with sensor capture: controller.sensors[] (full sensor
+// records with model + input + zone-association) and per-zone sensors[] cross-references
+// (denormalised {id, name} for AI scanning convenience). Snapshot consumers can dispatch on
+// this number to handle older snapshots that lack these fields. The version is informational
+// — there is no migration path; a v2 snapshot is still readable, just missing sensor data.
+export const SNAPSHOT_VERSION = 3;
 const PACKAGE_VERSION = '0.3.0';
 
-export interface ControllerSnapshotV2 {
+export interface ControllerSnapshotV3 {
   snapshot_version: typeof SNAPSHOT_VERSION;
   captured_at: string;
   server_version: string;
@@ -27,8 +34,13 @@ export interface ControllerSnapshotV2 {
     programs: Array<Record<string, unknown>>;
     seasonal_adjustments: { factors: number[] };
     watering_triggers: Record<string, unknown> | null;
+    sensors: Array<Record<string, unknown>>;
   };
 }
+
+// Backward-compatible alias for callers still importing the previous version's type name.
+// New code should use ControllerSnapshotV3.
+export type ControllerSnapshotV2 = ControllerSnapshotV3;
 
 const Input = { controller_id: z.number().int() };
 
@@ -37,7 +49,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
     'dump_controller_snapshot',
     {
       description:
-        'Snapshot one controller as a versioned JSON document. Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (Standard programs are inlined with full schedule detail — start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments), program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED), seasonal adjustments, and watering triggers (with units captured). Read-only; no mutations.',
+        'Snapshot one controller as a versioned JSON document. Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (Standard programs are inlined with full schedule detail — start_times, days_run, periodicity, monthly_watering_adjustments, per-zone run-time groups, valid_from/to, conditional schedule adjustments), program start times per zone (empty for STANDARD-mode controllers; populated for ADVANCED), seasonal adjustments, watering triggers (with units captured), and sensors (controller.sensors[] with full model + input + zone-association detail; per-zone sensors[] denormalised cross-references). Read-only; no mutations.',
       inputSchema: Input,
     },
     async ({ controller_id }) =>
@@ -47,23 +59,32 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
           const controller = await api.getController(controller_id);
           const zones = await api.getZones(controller_id);
 
-          const [zoneSettings, programsList, seasonalAdjustments, wateringTriggers, startTimesByZone] =
-            await Promise.all([
-              Promise.all(
-                zones.map(async (z) => ({ zone_id: z.id, settings: await api.getZoneFull(z.id) })),
-              ),
-              api.getPrograms(controller_id, true),
-              api.getSeasonalAdjustments(controller_id),
-              api.getWateringTriggers(controller_id),
-              Promise.all(
-                zones.map(async (z) => ({
-                  zone_id: z.id,
-                  start_times: (await api.getProgramStartTimesForZone(z.id)).map(
-                    serializeProgramStartTime,
-                  ),
-                })),
-              ),
-            ]);
+          const [
+            zoneSettings,
+            programsList,
+            seasonalAdjustments,
+            wateringTriggers,
+            startTimesByZone,
+            controllerSensors,
+          ] = await Promise.all([
+            Promise.all(
+              zones.map(async (z) => ({ zone_id: z.id, settings: await api.getZoneFull(z.id) })),
+            ),
+            api.getPrograms(controller_id, true),
+            api.getSeasonalAdjustments(controller_id),
+            api.getWateringTriggers(controller_id),
+            Promise.all(
+              zones.map(async (z) => ({
+                zone_id: z.id,
+                start_times: (await api.getProgramStartTimesForZone(z.id)).map(
+                  serializeProgramStartTime,
+                ),
+              })),
+            ),
+            // Single controller-scoped sensor fetch — per-zone sensors[] cross-references
+            // are derived from this same array, so no N+1 zone-fan-out.
+            api.getControllerSensors(controller_id),
+          ]);
 
           // Inline StandardProgram details for every Standard program. ADVANCED programs are returned as the thin list entry only — Phase 3 will dispatch on programMode and add Advanced inlining.
           const standardPrograms = await Promise.all(
@@ -100,10 +121,13 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
               ...summary,
               settings: full ? serializeZoneSettings(full) : null,
               program_start_times: startsByZone.get(z.id) ?? [],
+              // Per-zone sensors are derived from the controller-level sensors list rather
+              // than calling getZoneSensors per-zone — same data, no extra round-trips.
+              sensors: serializeSensorZoneRefsForZone(controllerSensors, z.id),
             };
           });
 
-          const snapshot: ControllerSnapshotV2 = {
+          const snapshot: ControllerSnapshotV3 = {
             snapshot_version: SNAPSHOT_VERSION,
             captured_at: new Date().toISOString(),
             server_version: PACKAGE_VERSION,
@@ -114,6 +138,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
               programs: inlinedPrograms as unknown as Array<Record<string, unknown>>,
               seasonal_adjustments: { factors: seasonalAdjustments },
               watering_triggers: wateringTriggers ? serializeWateringTriggers(wateringTriggers) : null,
+              sensors: controllerSensors.map(serializeSensor),
             },
           };
           return jsonResult(snapshot);

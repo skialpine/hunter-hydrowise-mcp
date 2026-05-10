@@ -10,6 +10,8 @@ import type {
   RunSummaryDetails,
   RunTimeGroupRead,
   ScheduledZoneRun,
+  SensorModelRead,
+  SensorRead,
   TimeZoneRead,
   User,
   WateringTriggersRead,
@@ -330,6 +332,82 @@ export function serializeProgramStartTime(p: ProgramStartTimeRead): Record<strin
     apply_all: p.application?.all ?? null,
     zone_ids: (p.application?.zones ?? []).map((z) => z.id),
   };
+}
+
+// =============================================================================
+// Sensors
+// =============================================================================
+
+// Snake-case writable shape per project convention. The flat top-level fields
+// (id, name, model_id, input_number, zone_ids) are exactly the args needed by
+// `update_sensor` — copy → modify → call. The `_observed` block holds read-only
+// model details for AI scanning (sensor_type, mode_type, divisor, flow_rate,
+// model_name, category) that the writable shape doesn't include.
+//
+// `zone_ids` is intentionally an array of bare integer ids, not the upstream
+// `{id, name, number}` objects — restore wants the same shape it would pass to
+// `create_sensor`. The denormalized `{id, name}` references for per-zone
+// snapshot embedding live in `serializeSensorZoneRefsForZone`.
+export function serializeSensor(s: SensorRead): Record<string, unknown> {
+  const zones = nonNull(s.zones);
+  return {
+    id: s.id,
+    name: s.name,
+    model_id: s.model.id,
+    input_number: s.input.number,
+    zone_ids: zones.map((z) => z.id),
+    _observed: {
+      model_name: s.model.name,
+      sensor_type: s.model.sensorType,
+      mode_type: s.model.modeType,
+      mode: s.model.mode,
+      divisor: s.model.divisor,
+      flow_rate: s.model.flowRate,
+      off_level: s.model.offLevel,
+      off_timer: s.model.offTimer,
+      delay: s.model.delay,
+      active: s.model.active,
+      input_label: s.input.label,
+      type_label: s.model.type?.label ?? null,
+      category: s.model.category ? { id: s.model.category.id, name: s.model.category.name } : null,
+      // customerId on the model is the tell for "this is a custom (account-owned) type" vs.
+      // built-in (null/0). Restore needs this signal to know whether to recreate the type first.
+      customer_id: s.model.customerId,
+    },
+  };
+}
+
+// Catalog entry for `list_sensor_models`. Per the spec, includes id, name,
+// sensor_type, mode_type, category — the fields a restore workflow needs to map
+// snapshot model names back to current model_ids.
+export function serializeSensorModel(m: SensorModelRead): Record<string, unknown> {
+  return {
+    id: m.id,
+    name: m.name,
+    sensor_type: m.sensorType,
+    mode_type: m.modeType,
+    category: m.category ? { id: m.category.id, name: m.category.name } : null,
+    // Calibration / behaviour fields useful when a custom type is being inspected.
+    delay: m.delay,
+    off_timer: m.offTimer,
+    off_level: m.offLevel,
+    divisor: m.divisor,
+    flow_rate: m.flowRate,
+    // customerId is the marker for built-in (null/0) vs. customer-owned (non-zero).
+    customer_id: m.customerId,
+  };
+}
+
+// Per-zone denormalized references — derived from controller-level sensors at
+// snapshot assembly time, not from a separate ZONE_SENSORS_QUERY (avoids N+1).
+// Returns the minimal {id, name} shape the spec calls for in zone snapshot entries.
+export function serializeSensorZoneRefsForZone(
+  controllerSensors: SensorRead[],
+  zoneId: number,
+): Array<{ id: number; name: string }> {
+  return controllerSensors
+    .filter((s) => nonNull(s.zones).some((z) => z.id === zoneId))
+    .map((s) => ({ id: s.id, name: s.name }));
 }
 
 export function serializeStandardProgram(p: import('../hydrawise/queries.js').StandardProgramRead): Record<string, unknown> {

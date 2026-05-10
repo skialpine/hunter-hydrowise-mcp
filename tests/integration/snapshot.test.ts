@@ -191,6 +191,8 @@ function makeApp(apiOverrides: Partial<HydrawiseApi> = {}) {
     getProgramStartTimesForZone: async () => [],
     getSeasonalAdjustments: async () => [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
     getWateringTriggers: async () => fakeWateringTriggers,
+    // Default: no sensors. Tests that exercise the sensor-capture path override this.
+    getControllerSensors: async () => [],
     ...apiOverrides,
   });
   return buildApp(makeConfig(), () => buildMcpServer(api), createLogger('error'));
@@ -225,13 +227,13 @@ async function callTool(app: ReturnType<typeof makeApp>, toolName: string, args:
   };
 }
 
-describe('dump_controller_snapshot v2', () => {
-  it('returns snapshot_version 2', async () => {
+describe('dump_controller_snapshot v3', () => {
+  it('returns snapshot_version 3', async () => {
     const app = makeApp();
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBeFalsy();
     const snap = JSON.parse(resp.result!.content[0]!.text) as { snapshot_version: number };
-    expect(snap.snapshot_version).toBe(2);
+    expect(snap.snapshot_version).toBe(3);
   });
 
   it('controller block includes location, time_zone, master_valve, expanders, modules, run_time_groups, controller_notes, device_id', async () => {
@@ -330,5 +332,67 @@ describe('dump_controller_snapshot v2', () => {
     expect(wt.suspend_water_temperature).toEqual({ value: 50, unit: 'F' });
     expect(wt.suspend_wind).toEqual({ value: 25, unit: 'mph' });
     expect(wt.suspend_water_rain).toEqual({ value: 0.2, unit: 'in' });
+  });
+
+  it('controller.sensors[] is captured and per-zone sensors[] are denormalised cross-references', async () => {
+    const fakeRainSensor = {
+      id: 5001,
+      name: 'Front yard rain',
+      model: {
+        id: 12,
+        name: 'Rain Sensor (normally closed wire)',
+        modeType: 'STOP' as const,
+        mode: 'STOP' as const,
+        active: true,
+        offLevel: null,
+        offTimer: null,
+        delay: 0,
+        divisor: null,
+        flowRate: null,
+        customerId: null,
+        sensorType: 'LEVEL_CLOSED' as const,
+        type: { value: 1, label: 'Hunter Clik' },
+        category: { id: 1, name: 'Hunter Clik' },
+      },
+      input: { number: 1, label: 'SEN-1' },
+      // fakeZone in this file is id: 100 — the sensor guards that zone, so we expect a cross-ref.
+      zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    };
+    const app = makeApp({ getControllerSensors: async () => [fakeRainSensor] });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: {
+        sensors: Array<Record<string, unknown>>;
+        zones: Array<{ id: number; sensors: Array<{ id: number; name: string }> }>;
+      };
+    };
+    // Controller-level sensors[] is the canonical source — full writable shape + _observed block.
+    expect(snap.controller.sensors).toHaveLength(1);
+    expect(snap.controller.sensors[0]).toMatchObject({
+      id: 5001,
+      name: 'Front yard rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: [100],
+    });
+    expect((snap.controller.sensors[0] as { _observed: { sensor_type: string } })._observed.sensor_type).toBe('LEVEL_CLOSED');
+    // Per-zone sensors[] is the denormalised cross-ref ({id, name} only) — derived from
+    // controller-level sensors, not a separate fetch.
+    const zoneEntry = snap.controller.zones.find((z) => z.id === 100);
+    expect(zoneEntry?.sensors).toEqual([{ id: 5001, name: 'Front yard rain' }]);
+  });
+
+  it('controller.sensors is empty array when controller has no sensors (default fake fixture)', async () => {
+    const app = makeApp(); // default fake returns no sensors
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: { sensors: unknown[]; zones: Array<{ sensors: unknown[] }> };
+    };
+    expect(snap.controller.sensors).toEqual([]);
+    // Per-zone sensors[] also empty — no controller-level sensor to denormalise from.
+    for (const z of snap.controller.zones) {
+      expect(z.sensors).toEqual([]);
+    }
   });
 });

@@ -4,6 +4,8 @@ import type {
   ExpanderRead,
   LocationRead,
   RunTimeGroupRead,
+  SensorModelRead,
+  SensorRead,
   StandardProgramRead,
   TimeZoneRead,
   WateringTriggersRead,
@@ -14,6 +16,9 @@ import {
   serializeLocation,
   serializeNote,
   serializeRunTimeGroup,
+  serializeSensor,
+  serializeSensorModel,
+  serializeSensorZoneRefsForZone,
   serializeStandardProgram,
   serializeTimeZone,
   serializeWateringTriggers,
@@ -315,6 +320,139 @@ describe('serializeStandardProgram', () => {
     expect(out.schedule_adjustment_ids).toEqual([17]);
     expect(out.per_zone_run_times).toEqual([
       { zone_id: 100, zone_number: 1, run_time_group_id: 200, run_time_group_name: null, duration_minutes: 10 },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sensor serializers
+// ---------------------------------------------------------------------------
+
+const fakeRainSensorModel: SensorModelRead = {
+  id: 12,
+  name: 'Rain Sensor (normally closed wire)',
+  modeType: 'STOP',
+  mode: 'STOP',
+  active: true,
+  offLevel: null,
+  offTimer: null,
+  delay: 0,
+  divisor: null,
+  flowRate: null,
+  customerId: null,
+  sensorType: 'LEVEL_CLOSED',
+  type: { value: 1, label: 'Hunter Clik' },
+  category: { id: 1, name: 'Hunter Clik' },
+};
+
+const fakeRainSensor: SensorRead = {
+  id: 5001,
+  name: 'Front yard rain',
+  model: fakeRainSensorModel,
+  input: { number: 1, label: 'SEN-1' },
+  zones: [
+    { id: 100, number: { value: 1 }, name: 'Front Lawn' },
+    { id: 101, number: { value: 2 }, name: 'Back Lawn' },
+  ],
+};
+
+describe('serializeSensor', () => {
+  it('emits flat writable shape (id, name, model_id, input_number, zone_ids) plus _observed model details', () => {
+    const out = serializeSensor(fakeRainSensor);
+    expect(out.id).toBe(5001);
+    expect(out.name).toBe('Front yard rain');
+    expect(out.model_id).toBe(12);
+    expect(out.input_number).toBe(1);
+    expect(out.zone_ids).toEqual([100, 101]);
+    expect(out._observed).toEqual({
+      model_name: 'Rain Sensor (normally closed wire)',
+      sensor_type: 'LEVEL_CLOSED',
+      mode_type: 'STOP',
+      mode: 'STOP',
+      divisor: null,
+      flow_rate: null,
+      off_level: null,
+      off_timer: null,
+      delay: 0,
+      active: true,
+      input_label: 'SEN-1',
+      type_label: 'Hunter Clik',
+      category: { id: 1, name: 'Hunter Clik' },
+      customer_id: null,
+    });
+  });
+
+  it('emits empty zone_ids and _observed.category=null when zones/category are absent', () => {
+    const out = serializeSensor({
+      ...fakeRainSensor,
+      zones: null,
+      model: { ...fakeRainSensorModel, category: null, type: null },
+    });
+    expect(out.zone_ids).toEqual([]);
+    const observed = out._observed as { category: unknown; type_label: unknown };
+    expect(observed.category).toBeNull();
+    expect(observed.type_label).toBeNull();
+  });
+
+  it('strips null entries from the zones array (Hydrawise list-of-nullable schema honesty)', () => {
+    const out = serializeSensor({
+      ...fakeRainSensor,
+      zones: [
+        { id: 100, number: { value: 1 }, name: 'Front Lawn' },
+        null,
+        { id: 102, number: { value: 3 }, name: 'Side' },
+      ],
+    });
+    expect(out.zone_ids).toEqual([100, 102]);
+  });
+});
+
+describe('serializeSensorModel', () => {
+  it('emits the catalog shape (id, name, sensor_type, mode_type, category, calibration fields, customer_id)', () => {
+    const out = serializeSensorModel(fakeRainSensorModel);
+    expect(out).toEqual({
+      id: 12,
+      name: 'Rain Sensor (normally closed wire)',
+      sensor_type: 'LEVEL_CLOSED',
+      mode_type: 'STOP',
+      category: { id: 1, name: 'Hunter Clik' },
+      delay: 0,
+      off_timer: null,
+      off_level: null,
+      divisor: null,
+      flow_rate: null,
+      customer_id: null,
+    });
+  });
+
+  it('treats a non-zero customer_id as a custom-type marker', () => {
+    const out = serializeSensorModel({ ...fakeRainSensorModel, customerId: 4242 });
+    expect(out.customer_id).toBe(4242);
+  });
+});
+
+describe('serializeSensorZoneRefsForZone', () => {
+  it('returns the {id, name} of every controller-level sensor that guards the given zone', () => {
+    const out = serializeSensorZoneRefsForZone([fakeRainSensor], 100);
+    expect(out).toEqual([{ id: 5001, name: 'Front yard rain' }]);
+  });
+
+  it('returns an empty array when no sensor guards the zone', () => {
+    const out = serializeSensorZoneRefsForZone([fakeRainSensor], 999);
+    expect(out).toEqual([]);
+  });
+
+  it('returns multiple references when several sensors guard the same zone', () => {
+    const second: SensorRead = {
+      ...fakeRainSensor,
+      id: 5002,
+      name: 'Soil',
+      zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    };
+    const out = serializeSensorZoneRefsForZone([fakeRainSensor, second], 100);
+    expect(out).toEqual([
+      { id: 5001, name: 'Front yard rain' },
+      { id: 5002, name: 'Soil' },
     ]);
   });
 });

@@ -2,9 +2,12 @@ import { HydrawiseMutationError, HydrawiseNotFoundError } from '../errors.js';
 import type { HydrawiseClient } from './client.js';
 import {
   CONTROLLER_QUERY,
+  CONTROLLER_SENSORS_QUERY,
   CONTROLLERS_QUERY,
   CREATE_CONTROLLER_NOTE_MUTATION,
+  CREATE_CUSTOM_SENSOR_TYPE_MUTATION,
   CREATE_EXPANDER_MUTATION,
+  CREATE_SENSOR_MUTATION,
   CREATE_PROGRAM_START_TIME_MUTATION,
   CREATE_SMART_WATERING_PROGRAM_MUTATION,
   CREATE_STANDARD_PROGRAM_MUTATION,
@@ -13,8 +16,10 @@ import {
   CREATE_ZONE_ADVANCED_MUTATION,
   CREATE_ZONE_NOTE_MUTATION,
   DELETE_CONTROLLER_NOTE_MUTATION,
+  DELETE_CUSTOM_SENSOR_TYPE_MUTATION,
   DELETE_EXPANDER_MUTATION,
   DELETE_PROGRAM_START_TIME_MUTATION,
+  DELETE_SENSOR_MUTATION,
   DELETE_STANDARD_PROGRAM_MUTATION,
   DELETE_ZONE_MUTATION,
   DELETE_ZONE_NOTE_MUTATION,
@@ -28,6 +33,7 @@ import {
   RESUME_ALL_ZONES_MUTATION,
   RESUME_ZONE_MUTATION,
   SEASONAL_ADJUSTMENTS_QUERY,
+  SENSOR_MODEL_CATALOG_QUERY,
   START_ALL_ZONES_MUTATION,
   START_ZONE_MUTATION,
   STOP_ALL_ZONES_MUTATION,
@@ -37,7 +43,9 @@ import {
   UPDATE_CONTROLLER_MASTER_VALVE_MUTATION,
   UPDATE_CONTROLLER_NOTE_MUTATION,
   UPDATE_CONTROLLER_PROGRAM_MODE_MUTATION,
+  UPDATE_CUSTOM_SENSOR_TYPE_MUTATION,
   UPDATE_EXPANDER_MUTATION,
+  UPDATE_SENSOR_MUTATION,
   UPDATE_LOCATION_MUTATION,
   UPDATE_LOCATION_COORDINATES_MUTATION,
   UPDATE_PROGRAM_START_TIME_MUTATION,
@@ -59,9 +67,12 @@ import {
   ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY,
   ZONE_RUN_SUMMARY_MONTHLY_QUERY,
   ZONE_RUN_SUMMARY_WEEKLY_QUERY,
+  ZONE_SENSORS_QUERY,
   ZONES_QUERY,
   type Controller,
   type ControllerNoteRead,
+  type CustomSensorTypeCreatePayload,
+  type CustomSensorTypeUpdatePayload,
   type LocationRead,
   type MasterValveRead,
   type PastZoneRuns,
@@ -70,6 +81,11 @@ import {
   type ProgramStartTimeWritable,
   type RunEventType,
   type RunSummaryDetails,
+  type SensorCreatePayload,
+  type SensorModelCategoryRead,
+  type SensorModelRead,
+  type SensorRead,
+  type SensorUpdatePayload,
   type SetBaselineValuesPayload,
   type StandardProgramRead,
   type StandardProgramWritable,
@@ -762,6 +778,142 @@ export class HydrawiseApi {
       },
     );
   }
+
+  // Sensors — controller- and zone-scoped reads, plus full CRUD
+
+  async getControllerSensors(controllerId: number): Promise<SensorRead[]> {
+    const data = await this.client.query<{
+      controller: { sensors: (SensorRead | null)[] | null } | null;
+    }>(CONTROLLER_SENSORS_QUERY, { controllerId });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return (data.controller.sensors ?? []).filter((s): s is SensorRead => s != null);
+  }
+
+  async getZoneSensors(zoneId: number): Promise<SensorRead[]> {
+    const data = await this.client.query<{
+      zone: { sensors: (SensorRead | null)[] | null } | null;
+    }>(ZONE_SENSORS_QUERY, { zoneId });
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return (data.zone.sensors ?? []).filter((s): s is SensorRead => s != null);
+  }
+
+  // listSensorModels does not pass controllerId — Configuration.sensorCategories is account-wide
+  // (the live schema does not accept a controller scope on the catalog query). The controllerId
+  // parameter is kept on the public API for tool-symmetry and future-proofing should the schema add a
+  // per-controller filter; see SENSOR_MODEL_CATALOG_QUERY in queries.ts.
+  async listSensorModels(_controllerId: number): Promise<SensorModelRead[]> {
+    const data = await this.client.query<{
+      configuration: { sensorCategories: (SensorModelCategoryRead | null)[] | null } | null;
+    }>(SENSOR_MODEL_CATALOG_QUERY);
+    const cats = (data.configuration?.sensorCategories ?? []).filter(
+      (c): c is SensorModelCategoryRead => c != null,
+    );
+    // Flatten the category->models tree. The category info is preserved on each model via
+    // SensorModel.category (selected by SENSOR_MODEL_FIELDS), so callers can group by category
+    // without needing the parent traversal.
+    return cats.flatMap((c) => (c.models ?? []).filter((m): m is SensorModelRead => m != null));
+  }
+
+  async createSensor(payload: SensorCreatePayload): Promise<SensorRead> {
+    return this.client.mutateRaw(
+      CREATE_SENSOR_MUTATION,
+      {
+        controllerId: payload.controller_id,
+        name: payload.name,
+        modelId: payload.model_id,
+        inputNumber: payload.input_number,
+        zoneIds: payload.zone_ids,
+      },
+      (data) => requireSensor('createSensor', data.createSensor),
+    );
+  }
+
+  async updateSensor(payload: SensorUpdatePayload): Promise<SensorRead> {
+    return this.client.mutateRaw(
+      UPDATE_SENSOR_MUTATION,
+      {
+        sensorId: payload.sensor_id,
+        controllerId: payload.controller_id,
+        name: payload.name,
+        modelId: payload.model_id,
+        inputNumber: payload.input_number,
+        zoneIds: payload.zone_ids,
+      },
+      (data) => requireSensor('updateSensor', data.updateSensor),
+    );
+  }
+
+  async deleteSensor(sensorId: number): Promise<true> {
+    return this.client.mutateRaw(
+      DELETE_SENSOR_MUTATION,
+      { sensorId },
+      (data) => {
+        if (data.deleteSensor !== true) {
+          throw new HydrawiseMutationError(
+            `deleteSensor returned ${JSON.stringify(data.deleteSensor)}; the operation may not have taken effect`,
+          );
+        }
+        return true;
+      },
+    );
+  }
+
+  async createCustomSensorType(payload: CustomSensorTypeCreatePayload): Promise<SensorModelRead> {
+    return this.client.mutateRaw(
+      CREATE_CUSTOM_SENSOR_TYPE_MUTATION,
+      {
+        customerId: payload.customer_id,
+        name: payload.name,
+        customSensorType: payload.custom_sensor_type,
+        modeType: payload.mode_type,
+        delay: payload.delay ?? null,
+        offTimer: payload.off_timer ?? null,
+        flowSensorRate: payload.flow_sensor_rate ?? null,
+      },
+      (data) => requireSensorModel('createCustomSensorType', data.createCustomSensorType),
+    );
+  }
+
+  async updateCustomSensorType(payload: CustomSensorTypeUpdatePayload): Promise<SensorModelRead> {
+    return this.client.mutateRaw(
+      UPDATE_CUSTOM_SENSOR_TYPE_MUTATION,
+      {
+        customSensorTypeId: payload.custom_sensor_type_id,
+        customerId: payload.customer_id,
+        controllerId: payload.controller_id,
+        name: payload.name,
+        customSensorType: payload.custom_sensor_type,
+        modeType: payload.mode_type,
+        delay: payload.delay ?? null,
+        offTimer: payload.off_timer ?? null,
+        flowSensorRate: payload.flow_sensor_rate ?? null,
+      },
+      (data) => requireSensorModel('updateCustomSensorType', data.updateCustomSensorType),
+    );
+  }
+
+  // deleteCustomSensorType returns Int per the live schema (typically 1 = one row deleted).
+  // We coerce to true on a positive count and throw on 0/null/non-number — the AI caller cares only
+  // about success vs. failure, not the row count.
+  async deleteCustomSensorType(id: number): Promise<true> {
+    return this.client.mutateRaw(
+      DELETE_CUSTOM_SENSOR_TYPE_MUTATION,
+      { id },
+      (data) => {
+        const n = data.deleteCustomSensorType;
+        if (typeof n !== 'number' || n <= 0) {
+          throw new HydrawiseMutationError(
+            `deleteCustomSensorType returned ${JSON.stringify(n)}; the operation may not have taken effect`,
+          );
+        }
+        return true;
+      },
+    );
+  }
 }
 
 function requireExpander(op: string, value: unknown): { id: number; name: string; number: number } {
@@ -773,6 +925,52 @@ function requireExpander(op: string, value: unknown): { id: number; name: string
     throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
   }
   return { id: v.id, name: v.name, number: v.number };
+}
+
+// Sensor extractor — validates only the fields callers depend on (id, name, model.id,
+// input.number). The full SensorRead shape is much larger but those four are the ones
+// downstream consumers (snapshot, restore workflow) cannot proceed without. The cast to
+// SensorRead is safe because the GraphQL response is shape-validated by the server before
+// it reaches us; we trust it once the structural sanity check above passes.
+function requireSensor(op: string, value: unknown): SensorRead {
+  if (!value || typeof value !== 'object') {
+    throw new HydrawiseMutationError(
+      `${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`,
+    );
+  }
+  const v = value as {
+    id?: unknown;
+    name?: unknown;
+    model?: { id?: unknown } | null;
+    input?: { number?: unknown } | null;
+  };
+  if (
+    typeof v.id !== 'number' ||
+    typeof v.name !== 'string' ||
+    !v.model ||
+    typeof v.model.id !== 'number' ||
+    !v.input ||
+    typeof v.input.number !== 'number'
+  ) {
+    throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
+  }
+  return value as SensorRead;
+}
+
+// SensorModel extractor — validates only id and modeType (the discriminator the schema
+// guarantees is non-null). name is nullable per schema (built-in catalog entries always have a
+// name; custom types may briefly lack one between create and rename).
+function requireSensorModel(op: string, value: unknown): SensorModelRead {
+  if (!value || typeof value !== 'object') {
+    throw new HydrawiseMutationError(
+      `${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`,
+    );
+  }
+  const v = value as { id?: unknown; modeType?: unknown };
+  if (typeof v.id !== 'number' || typeof v.modeType !== 'string') {
+    throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
+  }
+  return value as SensorModelRead;
 }
 
 function isNoteType(x: unknown): x is NoteType {

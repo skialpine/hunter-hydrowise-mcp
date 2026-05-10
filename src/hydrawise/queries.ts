@@ -1793,3 +1793,334 @@ export interface ZoneCreatePayload {
   flow_monitoring_value: number | null;
   current_monitoring_value: number | null;
 }
+
+// =============================================================================
+// Sensors (irrigation-sensors capability)
+// =============================================================================
+// Hydrawise schema reference (live SDL):
+//   type Sensor { id, name, model: SensorModel!, input: SensorInput!, zones: [Zone] }
+//   type SensorModel { id, name, modeType: CustomSensorModeTypeEnum!, mode: CustomSensorModeTypeEnum!,
+//                      active, offLevel, offTimer, delay, divisor, flowRate, customerId,
+//                      sensorType: CustomSensorTypeEnum, type: SelectedOption!,
+//                      category: SensorModelCategory }
+//   type SensorInput { number: Int!, label: String! }
+//   enum CustomSensorModeTypeEnum { START STOP REPORT }
+//   enum CustomSensorTypeEnum { LEVEL_OPEN LEVEL_CLOSED FLOW THRESHOLD }
+//
+// The sensor model catalog is exposed via Configuration.sensorCategories — a top-level
+// query (`configuration { sensorCategories { id, name, models { ... } } }`), NOT under
+// Controller. Built-in models live there alongside customer-created custom types.
+
+export type CustomSensorModeType = 'START' | 'STOP' | 'REPORT';
+export type CustomSensorTypeEnum = 'LEVEL_OPEN' | 'LEVEL_CLOSED' | 'FLOW' | 'THRESHOLD';
+
+export interface SensorInputRead {
+  number: number;
+  label: string;
+}
+
+export interface SensorModelRead {
+  id: number;
+  name: string | null;
+  modeType: CustomSensorModeType;
+  mode: CustomSensorModeType;
+  active: boolean | null;
+  offLevel: number | null;
+  offTimer: number | null;
+  delay: number | null;
+  divisor: number | null;
+  flowRate: number | null;
+  customerId: number | null;
+  sensorType: CustomSensorTypeEnum | null;
+  type: { value: number; label: string | null } | null;
+  category: { id: number; name: string } | null;
+}
+
+// Per-zone reference embedded inside Sensor.zones — minimal shape (id/number/name)
+// to support per-zone cross-references in the snapshot without re-fetching full Zone.
+export interface SensorZoneRef {
+  id: number;
+  number: { value: number };
+  name: string;
+}
+
+export interface SensorRead {
+  id: number;
+  name: string;
+  model: SensorModelRead;
+  input: SensorInputRead;
+  zones: (SensorZoneRef | null)[] | null;
+}
+
+export interface SensorModelCategoryRead {
+  id: number;
+  name: string;
+  models: (SensorModelRead | null)[] | null;
+}
+
+// SensorModel field set used inside every read query — single source of truth so
+// CONTROLLER_SENSORS_QUERY, ZONE_SENSORS_QUERY, and SENSOR_MODEL_CATALOG_QUERY all
+// pull identical model details.
+const SENSOR_MODEL_FIELDS = /* GraphQL */ `
+  id
+  name
+  modeType
+  mode
+  active
+  offLevel
+  offTimer
+  delay
+  divisor
+  flowRate
+  customerId
+  sensorType
+  type {
+    value
+    label
+  }
+  category {
+    id
+    name
+  }
+`;
+
+// Note: Sensor.zones intentionally selects only id/number/name (no recursive
+// Zone.sensors back-reference) — full Zone data is fetched separately via ZONES_QUERY
+// and the per-zone sensor refs are denormalized server-side in serializeZone.
+export const CONTROLLER_SENSORS_QUERY = /* GraphQL */ `
+  query ControllerSensors($controllerId: Int!) {
+    controller(controllerId: $controllerId) {
+      sensors {
+        id
+        name
+        model {
+          ${SENSOR_MODEL_FIELDS}
+        }
+        input {
+          number
+          label
+        }
+        zones {
+          id
+          number {
+            value
+          }
+          name
+        }
+      }
+    }
+  }
+`;
+
+// ZONE_SENSORS_QUERY — sensors guarding a single zone. Omits Sensor.zones to avoid
+// recursion (the perspective is already zone-scoped, so a back-reference to Zone
+// would just yield this zone again).
+export const ZONE_SENSORS_QUERY = /* GraphQL */ `
+  query ZoneSensors($zoneId: Int!) {
+    zone(zoneId: $zoneId) {
+      sensors {
+        id
+        name
+        model {
+          ${SENSOR_MODEL_FIELDS}
+        }
+        input {
+          number
+          label
+        }
+      }
+    }
+  }
+`;
+
+// SENSOR_MODEL_CATALOG_QUERY — built-in sensor models grouped by category, plus
+// any custom models the customer has created. The schema does not accept a
+// controllerId here; the catalog is account-wide. The MCP tool layer accepts
+// controller_id for forward-compat / consistency but does not pass it through.
+export const SENSOR_MODEL_CATALOG_QUERY = /* GraphQL */ `
+  query SensorModelCatalog {
+    configuration {
+      sensorCategories {
+        id
+        name
+        models {
+          ${SENSOR_MODEL_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+// Sensor mutations. Note that updateSensor's zoneIds is `[Int]` (nullable) per the
+// live schema — passing null leaves existing zone associations alone, while passing
+// an array replaces them. createSensor's zoneIds is `[Int]!` (non-null).
+const SENSOR_RETURN_FIELDS = /* GraphQL */ `
+  id
+  name
+  model {
+    ${SENSOR_MODEL_FIELDS}
+  }
+  input {
+    number
+    label
+  }
+  zones {
+    id
+    number {
+      value
+    }
+    name
+  }
+`;
+
+export const CREATE_SENSOR_MUTATION = /* GraphQL */ `
+  mutation CreateSensor(
+    $controllerId: Int!
+    $name: String!
+    $modelId: Int!
+    $inputNumber: Int!
+    $zoneIds: [Int]!
+  ) {
+    createSensor(
+      controllerId: $controllerId
+      name: $name
+      modelId: $modelId
+      inputNumber: $inputNumber
+      zoneIds: $zoneIds
+    ) {
+      ${SENSOR_RETURN_FIELDS}
+    }
+  }
+`;
+
+export const UPDATE_SENSOR_MUTATION = /* GraphQL */ `
+  mutation UpdateSensor(
+    $sensorId: Int!
+    $controllerId: Int!
+    $name: String!
+    $modelId: Int!
+    $inputNumber: Int!
+    $zoneIds: [Int]
+  ) {
+    updateSensor(
+      sensorId: $sensorId
+      controllerId: $controllerId
+      name: $name
+      modelId: $modelId
+      inputNumber: $inputNumber
+      zoneIds: $zoneIds
+    ) {
+      ${SENSOR_RETURN_FIELDS}
+    }
+  }
+`;
+
+export const DELETE_SENSOR_MUTATION = /* GraphQL */ `
+  mutation DeleteSensor($sensorId: Int!) {
+    deleteSensor(sensorId: $sensorId)
+  }
+`;
+
+// Custom sensor type CRUD. createCustomSensorType returns a SensorModel; the new id
+// is what subsequent createSensor calls reference. updateCustomSensorType requires
+// controllerId in addition to customerId (per live schema). deleteCustomSensorType
+// returns Int (the count of deleted records, typically 1) per the live schema, NOT
+// a Boolean — the extractor coerces to a boolean success indicator.
+export const CREATE_CUSTOM_SENSOR_TYPE_MUTATION = /* GraphQL */ `
+  mutation CreateCustomSensorType(
+    $customerId: Int!
+    $name: String!
+    $customSensorType: CustomSensorTypeEnum!
+    $modeType: CustomSensorModeTypeEnum!
+    $delay: Int
+    $offTimer: Int
+    $flowSensorRate: Float
+  ) {
+    createCustomSensorType(
+      customerId: $customerId
+      name: $name
+      customSensorType: $customSensorType
+      modeType: $modeType
+      delay: $delay
+      offTimer: $offTimer
+      flowSensorRate: $flowSensorRate
+    ) {
+      ${SENSOR_MODEL_FIELDS}
+    }
+  }
+`;
+
+export const UPDATE_CUSTOM_SENSOR_TYPE_MUTATION = /* GraphQL */ `
+  mutation UpdateCustomSensorType(
+    $customSensorTypeId: Int!
+    $customerId: Int!
+    $controllerId: Int!
+    $name: String!
+    $customSensorType: CustomSensorTypeEnum!
+    $modeType: CustomSensorModeTypeEnum!
+    $delay: Int
+    $offTimer: Int
+    $flowSensorRate: Float
+  ) {
+    updateCustomSensorType(
+      customSensorTypeId: $customSensorTypeId
+      customerId: $customerId
+      controllerId: $controllerId
+      name: $name
+      customSensorType: $customSensorType
+      modeType: $modeType
+      delay: $delay
+      offTimer: $offTimer
+      flowSensorRate: $flowSensorRate
+    ) {
+      ${SENSOR_MODEL_FIELDS}
+    }
+  }
+`;
+
+export const DELETE_CUSTOM_SENSOR_TYPE_MUTATION = /* GraphQL */ `
+  mutation DeleteCustomSensorType($id: Int!) {
+    deleteCustomSensorType(id: $id)
+  }
+`;
+
+// Writable payload shapes used by the MCP tool layer. Snake-case field names per
+// project convention; the API layer translates to GraphQL camelCase variables.
+export interface SensorCreatePayload {
+  controller_id: number;
+  name: string;
+  model_id: number;
+  input_number: number;
+  zone_ids: number[];
+}
+
+export interface SensorUpdatePayload {
+  sensor_id: number;
+  controller_id: number;
+  name: string;
+  model_id: number;
+  input_number: number;
+  zone_ids: number[] | null;
+}
+
+export interface CustomSensorTypeCreatePayload {
+  customer_id: number;
+  name: string;
+  custom_sensor_type: CustomSensorTypeEnum;
+  mode_type: CustomSensorModeType;
+  delay?: number | null;
+  off_timer?: number | null;
+  flow_sensor_rate?: number | null;
+}
+
+export interface CustomSensorTypeUpdatePayload {
+  custom_sensor_type_id: number;
+  customer_id: number;
+  controller_id: number;
+  name: string;
+  custom_sensor_type: CustomSensorTypeEnum;
+  mode_type: CustomSensorModeType;
+  delay?: number | null;
+  off_timer?: number | null;
+  flow_sensor_rate?: number | null;
+}

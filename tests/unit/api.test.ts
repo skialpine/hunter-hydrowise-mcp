@@ -377,3 +377,219 @@ describe('HydrawiseApi — controller-config mutations', () => {
       .rejects.toThrow(/at least one of address, latitude\+longitude/);
   });
 });
+
+describe('HydrawiseApi — sensor reads + mutations', () => {
+  // Reuse the fakeRawClient shape locally — the api.test.ts file's fakeRawClient is scoped
+  // inside the controller-config describe block, so duplicating the harness here is the
+  // path of least resistance. Both helpers share the same upstream HydrawiseClient interface.
+  function fakeSensorClient() {
+    const queryCalls: Array<{ document: string; variables?: Variables }> = [];
+    const mutateCalls: Array<{ document: string; variables: Variables }> = [];
+    let queryResult: unknown = null;
+    let mutateResult: Record<string, unknown> = {};
+    const client: HydrawiseClient = {
+      async query<TResult>(document: string, variables?: Variables): Promise<TResult> {
+        queryCalls.push({ document, variables });
+        return queryResult as TResult;
+      },
+      async mutate() {
+        throw new Error('no StatusCodeAndSummary mutations expected');
+      },
+      async mutateRaw<TResult>(
+        document: string,
+        variables: Variables,
+        extract: (data: Record<string, unknown>) => TResult,
+      ): Promise<TResult> {
+        mutateCalls.push({ document, variables });
+        return extract(mutateResult);
+      },
+    };
+    return {
+      client,
+      queryCalls,
+      mutateCalls,
+      setQueryResult: (v: unknown) => { queryResult = v; },
+      setMutateResult: (v: Record<string, unknown>) => { mutateResult = v; },
+    };
+  }
+
+  const fakeSensorReturn = {
+    id: 5001,
+    name: 'Rain',
+    model: { id: 12, name: 'Rain Sensor', modeType: 'STOP', mode: 'STOP', active: true, offLevel: null, offTimer: null, delay: 0, divisor: null, flowRate: null, customerId: null, sensorType: 'LEVEL_CLOSED', type: { value: 1, label: 'Hunter Clik' }, category: { id: 1, name: 'Hunter Clik' } },
+    input: { number: 1, label: 'SEN-1' },
+    zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+  };
+
+  it('getControllerSensors throws HydrawiseNotFoundError when controller is null', async () => {
+    const harness = fakeSensorClient();
+    harness.setQueryResult({ controller: null });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.getControllerSensors(317416)).rejects.toThrow(HydrawiseNotFoundError);
+  });
+
+  it('getControllerSensors returns an empty array when sensors is null', async () => {
+    const harness = fakeSensorClient();
+    harness.setQueryResult({ controller: { sensors: null } });
+    const api = new HydrawiseApi(harness.client);
+    expect(await api.getControllerSensors(317416)).toEqual([]);
+  });
+
+  it('getControllerSensors strips null entries from the schema-honest list', async () => {
+    const harness = fakeSensorClient();
+    harness.setQueryResult({ controller: { sensors: [fakeSensorReturn, null, { ...fakeSensorReturn, id: 5002 }] } });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.getControllerSensors(317416);
+    expect(out.map((s) => s.id)).toEqual([5001, 5002]);
+  });
+
+  it('getZoneSensors throws HydrawiseNotFoundError when zone is null', async () => {
+    const harness = fakeSensorClient();
+    harness.setQueryResult({ zone: null });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.getZoneSensors(2062869)).rejects.toThrow(HydrawiseNotFoundError);
+  });
+
+  it('listSensorModels flattens categories and preserves per-model category', async () => {
+    const harness = fakeSensorClient();
+    harness.setQueryResult({
+      configuration: {
+        sensorCategories: [
+          { id: 1, name: 'Hunter Clik', models: [fakeSensorReturn.model] },
+          { id: 2, name: 'US Hunter HC Flow Meters', models: [{ ...fakeSensorReturn.model, id: 99, name: '1in NPT' }] },
+        ],
+      },
+    });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.listSensorModels(317416);
+    expect(out).toHaveLength(2);
+    expect(out[0]?.id).toBe(12);
+    expect(out[1]?.id).toBe(99);
+    // Catalog query is account-wide; controllerId arg should NOT be included in the GraphQL variables.
+    expect(harness.queryCalls[0]?.variables).toBeUndefined();
+  });
+
+  it('createSensor maps snake_case payload to camelCase variables and returns the new sensor', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ createSensor: fakeSensorReturn });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.createSensor({
+      controller_id: 317416,
+      name: 'Rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: [100, 101],
+    });
+    expect(harness.mutateCalls[0]?.variables).toEqual({
+      controllerId: 317416,
+      name: 'Rain',
+      modelId: 12,
+      inputNumber: 1,
+      zoneIds: [100, 101],
+    });
+    expect(out.id).toBe(5001);
+  });
+
+  it('updateSensor passes zone_ids verbatim including null (signals "leave existing associations alone")', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ updateSensor: fakeSensorReturn });
+    const api = new HydrawiseApi(harness.client);
+    await api.updateSensor({
+      sensor_id: 5001,
+      controller_id: 317416,
+      name: 'Rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: null,
+    });
+    expect(harness.mutateCalls[0]?.variables).toEqual({
+      sensorId: 5001,
+      controllerId: 317416,
+      name: 'Rain',
+      modelId: 12,
+      inputNumber: 1,
+      zoneIds: null,
+    });
+  });
+
+  it('createSensor throws HydrawiseMutationError when extractor sees a malformed shape', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ createSensor: { id: 'not-a-number', name: 'Rain' } });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.createSensor({ controller_id: 1, name: 'Rain', model_id: 1, input_number: 1, zone_ids: [1] }))
+      .rejects.toThrow(HydrawiseMutationError);
+  });
+
+  it('deleteSensor throws on non-true result (no silent failure)', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ deleteSensor: false });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.deleteSensor(5001)).rejects.toThrow(/deleteSensor returned false/);
+  });
+
+  it('deleteSensor returns true on true result', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ deleteSensor: true });
+    const api = new HydrawiseApi(harness.client);
+    expect(await api.deleteSensor(5001)).toBe(true);
+  });
+
+  it('createCustomSensorType maps payload and returns the new SensorModel', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ createCustomSensorType: { ...fakeSensorReturn.model, id: 999, customerId: 4242 } });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.createCustomSensorType({
+      customer_id: 4242,
+      name: 'Custom Flow',
+      custom_sensor_type: 'FLOW',
+      mode_type: 'REPORT',
+      delay: 5,
+      off_timer: 30,
+      flow_sensor_rate: 1.5,
+    });
+    expect(harness.mutateCalls[0]?.variables).toEqual({
+      customerId: 4242,
+      name: 'Custom Flow',
+      customSensorType: 'FLOW',
+      modeType: 'REPORT',
+      delay: 5,
+      offTimer: 30,
+      flowSensorRate: 1.5,
+    });
+    expect(out.id).toBe(999);
+    expect(out.customerId).toBe(4242);
+  });
+
+  it('createCustomSensorType emits null (not undefined) for omitted optional calibration fields', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ createCustomSensorType: { ...fakeSensorReturn.model, id: 999, customerId: 4242 } });
+    const api = new HydrawiseApi(harness.client);
+    await api.createCustomSensorType({
+      customer_id: 4242,
+      name: 'Custom Level',
+      custom_sensor_type: 'LEVEL_OPEN',
+      mode_type: 'STOP',
+    });
+    expect(harness.mutateCalls[0]?.variables).toMatchObject({
+      delay: null,
+      offTimer: null,
+      flowSensorRate: null,
+    });
+  });
+
+  it('deleteCustomSensorType throws when upstream returns 0 or non-number (failure)', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ deleteCustomSensorType: 0 });
+    const api = new HydrawiseApi(harness.client);
+    await expect(api.deleteCustomSensorType(999)).rejects.toThrow(/deleteCustomSensorType returned 0/);
+    harness.setMutateResult({ deleteCustomSensorType: null });
+    await expect(api.deleteCustomSensorType(999)).rejects.toThrow(/deleteCustomSensorType returned null/);
+  });
+
+  it('deleteCustomSensorType coerces a positive Int (Hydrawise returns deleted-row count) to true', async () => {
+    const harness = fakeSensorClient();
+    harness.setMutateResult({ deleteCustomSensorType: 1 });
+    const api = new HydrawiseApi(harness.client);
+    expect(await api.deleteCustomSensorType(999)).toBe(true);
+  });
+});

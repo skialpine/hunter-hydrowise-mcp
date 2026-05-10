@@ -165,6 +165,16 @@ describe('streamable HTTP transport', () => {
         'create_zone_note',
         'update_zone_note',
         'delete_zone_note',
+        // sensors (irrigation-sensors capability)
+        'list_sensors',
+        'list_zone_sensors',
+        'list_sensor_models',
+        'create_sensor',
+        'update_sensor',
+        'delete_sensor',
+        'create_custom_sensor_type',
+        'update_custom_sensor_type',
+        'delete_custom_sensor_type',
         // backup + reporting
         'dump_controller_snapshot',
         'get_watering_report',

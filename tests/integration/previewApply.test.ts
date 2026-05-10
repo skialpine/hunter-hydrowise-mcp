@@ -344,4 +344,78 @@ describe('preview/apply contract', () => {
     expect(payload.operation).toBe('deleteZone');
     expect(payload.variables.zone_id).toBe(9999);
   });
+
+  // -------------------------------------------------------------------------
+  // Sensor tool preview/apply
+  // -------------------------------------------------------------------------
+
+  const fakeCreatedSensor = {
+    id: 5001,
+    name: 'Rain',
+    model: { id: 12, name: 'Rain Sensor', modeType: 'STOP' as const, mode: 'STOP' as const, active: true, offLevel: null, offTimer: null, delay: 0, divisor: null, flowRate: null, customerId: null, sensorType: 'LEVEL_CLOSED' as const, type: { value: 1, label: 'Hunter Clik' }, category: { id: 1, name: 'Hunter Clik' } },
+    input: { number: 1, label: 'SEN-1' },
+    zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+  };
+
+  it('create_sensor preview returns planned variables and does NOT call the API', async () => {
+    let called = false;
+    const app = makeApp({
+      createSensor: async () => {
+        called = true;
+        return fakeCreatedSensor;
+      },
+    });
+    const resp = await callTool(app, 'create_sensor', {
+      controller_id: 317416,
+      name: 'Rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: [100, 101],
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean;
+      operation: string;
+      variables: { controller_id: number; name: string; model_id: number; zone_ids: number[] };
+    };
+    expect(payload.preview).toBe(true);
+    expect(payload.operation).toBe('createSensor');
+    expect(payload.variables).toEqual({
+      controller_id: 317416,
+      name: 'Rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: [100, 101],
+    });
+  });
+
+  it('create_sensor preview=false invokes the API and returns the serialized sensor', async () => {
+    let called = false;
+    const app = makeApp({
+      createSensor: async () => {
+        called = true;
+        return fakeCreatedSensor;
+      },
+    });
+    const resp = await callTool(app, 'create_sensor', {
+      controller_id: 317416,
+      name: 'Rain',
+      model_id: 12,
+      input_number: 1,
+      zone_ids: [100],
+      preview: false,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(true);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean;
+      result: { id: number; name: string; model_id: number; zone_ids: number[] };
+    };
+    expect(payload.preview).toBe(false);
+    expect(payload.result.id).toBe(5001);
+    expect(payload.result.model_id).toBe(12);
+    expect(payload.result.zone_ids).toEqual([100]);
+  });
 });
