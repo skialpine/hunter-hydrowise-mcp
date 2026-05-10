@@ -35,7 +35,7 @@ npm run build
 # run with credentials in env
 HYDRAWISE_USERNAME=you@example.com \
 HYDRAWISE_PASSWORD=*** \
-node dist/server.js
+npm start
 ```
 
 The server prints `hydrowise-mcp listening on http://127.0.0.1:8765/mcp (MCP 2025-11-25)` on stderr and waits for MCP clients to connect.
@@ -298,7 +298,7 @@ By default the server binds to `127.0.0.1` and accepts only loopback origins. To
 HYDRAWISE_MCP_HOST=0.0.0.0 \
 HYDRAWISE_MCP_AUTH_TOKEN="$(openssl rand -hex 32)" \
 HYDRAWISE_MCP_ALLOWED_ORIGINS=https://my-other-host.example \
-node dist/server.js
+npm start
 ```
 
 Then add `"headers": { "Authorization": "Bearer ..." }` to the MCP client config and front the server with TLS (e.g. via Caddy, nginx, or Tailscale).
