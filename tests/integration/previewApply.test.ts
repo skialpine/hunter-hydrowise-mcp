@@ -529,4 +529,19 @@ describe('preview/apply contract', () => {
     });
     expect(resp.result?.isError).toBe(true);
   });
+
+  it('update_zone_standard rejects when icon is explicitly null (Zod enforces required)', async () => {
+    const app = makeApp();
+    const resp = await callTool(app, 'update_zone_standard', {
+      zone_id: 2063156,
+      name: '21. Patio Hill',
+      number: 21,
+      icon: null,
+      global_master_valve: -1,
+      watering_adjustment_percent: 100,
+      cycle_soak_enable: true,
+      // icon: null covers the recipe-builder path: snapshot had icon: null, AI calls tool verbatim
+    });
+    expect(resp.result?.isError).toBe(true);
+  });
 });
