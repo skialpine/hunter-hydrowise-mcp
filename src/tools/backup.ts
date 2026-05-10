@@ -102,22 +102,26 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
           ]);
 
           // Inline full program details — dispatch on program_type. Standard programs use
-          // serializeStandardProgram; Advanced programs use serializeAdvancedProgram. Other
-          // __typename values (none expected today) fall through to the thin list entry.
+          // serializeStandardProgram; Advanced programs use serializeAdvancedProgram. Unknown
+          // __typename values fall through to the thin list entry but emit a logger.warn so
+          // a future schema addition (e.g. a third Program implementer) doesn't silently
+          // produce incomplete snapshots — see CLAUDE.md note that the cached pydrawise
+          // schema has historically lagged the live schema.
           //
-          // The integrity check for both subtypes: getPrograms reported this program as type X,
-          // so the matching getXProgram MUST return non-null. A null means upstream lied
-          // (rename mid-fetch? race?) — fail the snapshot rather than silently downgrade to a
-          // thin entry the AI would mistake for "this program has no schedule details."
+          // The integrity check for both known subtypes: getPrograms reported this program as
+          // type X, so the matching getXProgram MUST return non-null. A null means upstream
+          // lied (rename mid-fetch? race?) — fail the snapshot rather than silently downgrade
+          // to a thin entry the AI would mistake for "this program has no schedule details."
           // HydrawiseAPIError categorises as api_error (upstream contract violation) rather
-          // than internal_error (our bug).
+          // than internal_error (our bug). Both messages include controller_id so users with
+          // multiple controllers can pinpoint which one failed.
           const inlinedDetails = await Promise.all(
             programsList.map(async (p) => {
               if (p.program_type === 'Standard') {
                 const full = await api.getStandardProgram(controller_id, p.id);
                 if (!full) {
                   throw new HydrawiseAPIError(
-                    `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
+                    `Snapshot integrity violation on controller ${controller_id}: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
                   );
                 }
                 return { kind: 'standard' as const, payload: serializeStandardProgram(full) };
@@ -126,11 +130,21 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
                 const full = await api.getAdvancedProgram(controller_id, p.id);
                 if (!full) {
                   throw new HydrawiseAPIError(
-                    `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Advanced but getAdvancedProgram returned null. The snapshot would be incomplete.`,
+                    `Snapshot integrity violation on controller ${controller_id}: program ${p.id} ("${p.name}") appears in list_programs as Advanced but getAdvancedProgram returned null. The snapshot would be incomplete.`,
                   );
                 }
                 return { kind: 'advanced' as const, payload: serializeAdvancedProgram(full) };
               }
+              // Unknown program subtype — silently downgrading to thin entry would defeat the
+              // integrity-guard rationale above. Warn (don't throw — partial info is better
+              // than no snapshot for a brand-new schema addition the user can't avoid) so the
+              // operator sees the gap in stderr and can file a tracking issue.
+              logger?.warn('snapshot dump_controller_snapshot: unknown program_type, falling back to thin entry', {
+                controller_id,
+                program_id: p.id,
+                program_name: p.name,
+                program_type: p.program_type,
+              });
               return null;
             }),
           );

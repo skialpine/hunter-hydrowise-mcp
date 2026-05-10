@@ -885,8 +885,12 @@ export interface StandardProgramRead {
   }[];
 }
 
-// AdvancedProgramScopeEnum (live SDL): CUSTOMER | CONTRACTOR.
-export type AdvancedProgramScope = 'CUSTOMER' | 'CONTRACTOR';
+// Single source of truth for the AdvancedProgramScope enum (live SDL: CUSTOMER | CONTRACTOR).
+// Follows the established `as const` tuple + derived literal-union idiom (see NOTE_TYPES,
+// CUSTOM_SENSOR_TYPES, MONITORING_METHODS, etc.) so a future Zod consumer can
+// `z.enum(ADVANCED_PROGRAM_SCOPES)` against the same list — no parallel maintenance.
+export const ADVANCED_PROGRAM_SCOPES = ['CUSTOMER', 'CONTRACTOR'] as const;
+export type AdvancedProgramScope = (typeof ADVANCED_PROGRAM_SCOPES)[number];
 
 // Full inlined shape for an AdvancedProgram entry — selected by the `... on AdvancedProgram`
 // fragment in PROGRAMS_FULL_QUERY. Companion to StandardProgramRead; both implement the
@@ -908,7 +912,7 @@ export interface AdvancedProgramRead {
   zoneSpecific: boolean;
   // Distinct from `id` — `advancedProgramId` cross-references the WateringProgram subtype
   // record (Time/Smart/VSS) that defines this program's frequency/duration. Keep both;
-  // CLAUDE.md gotcha (Phase 3) explains the distinction is unclear from the schema alone.
+  // the CLAUDE.md gotchas section explains the distinction is unclear from the schema alone.
   advancedProgramId: number;
   scope: AdvancedProgramScope;
   conditionalWateringAdjustments: { id: number; label: string }[];

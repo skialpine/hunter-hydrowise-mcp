@@ -435,7 +435,10 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     start_times: p.startTimes,
     ignore_rain_sensor: p.ignoreRainSensor,
     monthly_watering_adjustments: p.monthlyWateringAdjustments,
-    scheduling_method: p.schedulingMethod,
+    // Unwrap SelectedOption to bare Int (matches the project convention for unwrapping
+    // `SelectedOption` at the serializer boundary, and stays consistent with
+    // serializeAdvancedProgram below — both program serializers now emit the same shape).
+    scheduling_method: p.schedulingMethod?.value ?? null,
     periodicity: p.periodicity
       ? {
           period: p.periodicity.period,
@@ -487,13 +490,17 @@ export function serializeAdvancedProgram(p: AdvancedProgramRead): Record<string,
     monthly_watering_adjustments: p.monthlyWateringAdjustments,
     scheduling_method: p.schedulingMethod?.value ?? null,
     schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
-    // Flatten the ProgramWateringFrequency wrapper. WateringPeriodicity.{value, label} are
-    // both nullable per schema, so ?. them.
+    // Flatten the ProgramWateringFrequency wrapper. The schema declares both the wrapper
+    // (`wateringFrequency: ProgramWateringFrequency!`) and `period: WateringPeriodicity!`
+    // as non-null, but Hydrawise demonstrably violates `!` declarations elsewhere (see
+    // CLAUDE.md gotcha re Zone.status.lastRun). Defensive `?.` on every level — a single
+    // misbehaving Advanced program must not crash the whole snapshot. Inner period.value /
+    // period.label are genuinely nullable per schema either way.
     watering_frequency: {
-      label: p.wateringFrequency.label,
-      description: p.wateringFrequency.description,
-      period_value: p.wateringFrequency.period?.value ?? null,
-      period_label: p.wateringFrequency.period?.label ?? null,
+      label: p.wateringFrequency?.label ?? null,
+      description: p.wateringFrequency?.description ?? null,
+      period_value: p.wateringFrequency?.period?.value ?? null,
+      period_label: p.wateringFrequency?.period?.label ?? null,
     },
     // run_time_group is nullable on AdvancedProgram; surface as null when absent so the
     // snapshot's null-not-omitted convention holds.
