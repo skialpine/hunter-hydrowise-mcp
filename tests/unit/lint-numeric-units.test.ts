@@ -30,6 +30,9 @@ describe('IDENTIFIER_WHITELIST invariants', () => {
   it('accumulated_water_savings is NOT in the whitelist (it is wrapped as {value, unit})', () => {
     expect(IDENTIFIER_WHITELIST.has('accumulated_water_savings')).toBe(false);
   });
+  it('period_number IS in the whitelist (ordinal index, not a physical measurement)', () => {
+    expect(IDENTIFIER_WHITELIST.has('period_number')).toBe(true);
+  });
 });
 
 describe('numeric field naming lint', () => {

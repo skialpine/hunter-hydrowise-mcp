@@ -97,6 +97,8 @@ export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
   'minutes', 'days',
   // Reporting run-summary period range parameters (calendar units, not physical measurements)
   'start_week', 'end_week', 'start_month', 'end_month', 'start_year', 'end_year', 'year',
+  // Reporting water-saving-summary period selector (ordinal index, not a physical measurement)
+  'period_number',
 ]);
 
 export function inferWaterVolumeUnit(country: string | null | undefined): 'gallons' | 'liters' {
