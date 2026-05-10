@@ -252,6 +252,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
             name: 'Lawn',
             program_type: 'Standard',
             standard_program_day_pattern: 'EVERY_DAY',
+            day_pattern: null,
             scheduling_method: 3,
             monthly_watering_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
             schedule_adjustment_ids: [17],
@@ -275,8 +276,36 @@ describe('buildRestoreRecipe — programs and zones', () => {
       start_times: ['06:00', '18:00'],
       schedule_adjustment_ids: [17],
     });
-    // notes flag the gap (program_type / day_pattern not in the captured shape).
+    // notes flag the remaining gaps (program_type, run_duration, ignore_rain_sensor).
     expect(progStep?.notes).toBeDefined();
+  });
+
+  it('passes day_pattern from snapshot for dow-mode programs (not null)', () => {
+    const recipe = buildRestoreRecipe(
+      makeMinimalSnapshot({
+        programs: [
+          {
+            id: 200,
+            name: 'Wed+Sat',
+            program_type: 'Standard',
+            standard_program_day_pattern: 'dow',
+            day_pattern: '0001001',
+            scheduling_method: 3,
+            monthly_watering_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+            schedule_adjustment_ids: [],
+            valid_from_epoch_seconds: null,
+            valid_to_epoch_seconds: null,
+            periodicity: null,
+            start_times: ['06:00'],
+            days_run: ['WEDNESDAY', 'SATURDAY'],
+            per_zone_run_times: [],
+          },
+        ],
+      }),
+    );
+    const progStep = recipe.find((s) => s.tool === 'update_standard_program');
+    expect(progStep?.args.day_pattern).toBe('0001001');
+    expect(progStep?.args.standard_program_day_pattern).toBe('dow');
   });
 
   it('skips Advanced programs (no createAdvancedProgram mutation) — handled via per-zone flow instead', () => {
@@ -300,6 +329,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
             name: 'Lawn',
             program_type: 'Standard',
             standard_program_day_pattern: 'EVERY_DAY',
+            day_pattern: null,
             scheduling_method: 3,
             monthly_watering_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
             schedule_adjustment_ids: [],
@@ -656,6 +686,7 @@ describe('RECIPE_TOOL_NAMES', () => {
           name: 'Lawn',
           program_type: 'Standard',
           standard_program_day_pattern: 'EVERY_DAY',
+          day_pattern: null,
           scheduling_method: 3,
           monthly_watering_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
           schedule_adjustment_ids: [],

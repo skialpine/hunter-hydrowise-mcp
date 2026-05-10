@@ -501,7 +501,7 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     standard_program_day_pattern: p.standardProgramDayPattern,
     // 7-char bitmap "SMTWTFS": '1' = run, '0' = skip, position 0 = Sunday.
     // Non-null only when standard_program_day_pattern = "dow".
-    day_pattern: p.dayPattern ?? null,
+    day_pattern: p.dayPattern,
     days_run: p.daysRun,
     start_times: p.startTimes,
     ignore_rain_sensor: p.ignoreRainSensor,

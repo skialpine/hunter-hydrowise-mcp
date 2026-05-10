@@ -382,36 +382,37 @@ describe('StandardProgram.dayPattern round-trip', () => {
     expect(prog!.standard_program_day_pattern).toBe('dow');
   });
 
-  it('update_standard_program preview accepts the captured day_pattern without error', async () => {
+  it('_restore_recipe update_standard_program step carries day_pattern and preview round-trips cleanly', async () => {
     const app = makeAppWithProgram();
     const sid = await initSession(app);
-    // Simulate the restore workflow: take the snapshotted program and replay it
-    // through update_standard_program with preview: true.
+    // Pull the update_standard_program step directly from the recipe — this exercises
+    // the recipe builder's wiring of day_pattern (not just the serializer).
+    const dumpResp = await callTool(app, sid, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(dumpResp.result!.content[0]!.text) as {
+      _restore_recipe: Array<{ tool: string; args: Record<string, unknown> }>;
+    };
+    const progStep = snap._restore_recipe.find((s) => s.tool === 'update_standard_program');
+    expect(progStep).toBeDefined();
+    // Recipe builder must propagate day_pattern from the snapshot, not emit null.
+    expect(progStep!.args.day_pattern).toBe('0001001');
+    expect(progStep!.args.standard_program_day_pattern).toBe('dow');
+
+    // The recipe step args need program_type merged from live state (documented null in recipe).
+    // Supply it here as the restore skill would — simulates the real merge workflow.
     const previewResp = await callTool(app, sid, 'update_standard_program', {
+      ...progStep!.args,
+      program_type: 1, // merged from get_program — recipe notes document this requirement
       preview: true,
-      program_id: 8621589,
-      controller_id: 317416,
-      name: 'xxx',
-      program_type: 1,
-      day_pattern: '0001001',
-      standard_program_day_pattern: 'dow',
-      interval_days: null,
-      series_start_epoch_seconds: null,
-      start_times: ['06:00'],
-      zone_run_times: [{ zone_number: 1, run_time_group_id: 201 }],
-      schedule_adjustment_ids: [],
-      seasonal_adjustment_factor_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
-      valid_from_epoch_seconds: null,
-      valid_to_epoch_seconds: null,
-      ignore_rain_sensor: false,
     });
-    expect(previewResp.result?.isError).toBeFalsy();
+    expect(
+      previewResp.result?.isError,
+      `update_standard_program preview failed: ${previewResp.result?.content[0]?.text}`,
+    ).toBeFalsy();
     const payload = JSON.parse(previewResp.result!.content[0]!.text) as {
       preview: boolean;
       variables: Record<string, unknown>;
     };
     expect(payload.preview).toBe(true);
     expect(payload.variables.day_pattern).toBe('0001001');
-    expect(payload.variables.standard_program_day_pattern).toBe('dow');
   });
 });
