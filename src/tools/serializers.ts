@@ -83,6 +83,7 @@ export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
   // Mode / type enum inputs (Int discriminator, not a measured value)
   'watering_mode', 'watering_type', 'watering_frequency_mode', 'program_type',
   'watering_program_type', 'fixed_watering_frequency_mode', 'virtual_solar_sync_watering_frequency_mode',
+  'scheduling_method',
   // Day-of-week Int flags (0/1)
   'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
   // Zone-level computed / non-unit fields
