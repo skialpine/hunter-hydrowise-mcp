@@ -301,3 +301,117 @@ describe('snapshot _restore_recipe round-trip', () => {
     expect(Array.isArray(snap._caveats)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// StandardProgram.dayPattern round-trip
+// Fixture: one Standard program in "dow" mode with dayPattern "0001001" (Wed+Sat).
+// Verifies: (a) serializeStandardProgram surfaces day_pattern, (b) the snapshot
+// captures it, (c) update_standard_program preview accepts the captured value as-is.
+// ---------------------------------------------------------------------------
+
+const fakeStandardProgram = {
+  __typename: 'StandardProgram' as const,
+  id: 8621589,
+  name: 'xxx',
+  appliesToZones: [{ id: 100, name: 'Front Lawn', number: { value: 1 } }],
+  schedulingMethod: { value: 1, label: 'Automatic' },
+  monthlyWateringAdjustments: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+  startTimes: ['06:00'],
+  ignoreRainSensor: false,
+  daysRun: ['WEDNESDAY', 'SATURDAY'],
+  standardProgramDayPattern: 'dow',
+  dayPattern: '0001001',
+  periodicity: null,
+  timeRange: { validFrom: null, validTo: null },
+  conditionalWateringAdjustments: [],
+  applications: [
+    {
+      zone: { id: 100, number: { value: 1 } },
+      runTimeGroup: { id: 201, name: 'Group A', duration: 10 },
+    },
+  ],
+};
+
+function makeAppWithProgram() {
+  const api = Object.assign(new HydrawiseApi(fakeClient()), {
+    getUser: async () => ({ id: 1, name: 'Tester', email: 't@example.com' }),
+    getController: async () => fakeController,
+    getZones: async () => [fakeZone],
+    getZoneFull: async () => fakeZoneFull,
+    getPrograms: async () => [
+      { id: 8621589, name: 'xxx', program_type: 'Standard', scheduling_method: 1, applies_to_zone_ids: [100] },
+    ],
+    getStandardProgram: async () => fakeStandardProgram,
+    getAdvancedProgram: async () => null,
+    getProgramStartTimesForZone: async () => [],
+    getSeasonalAdjustments: async () => [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+    getWateringTriggers: async () => null,
+    getControllerSensors: async () => [],
+    getControllerNotes: async () => [],
+    getZoneNotes: async () => [],
+  });
+  return buildApp(makeConfig(), () => buildMcpServer(api, createLogger('error')), createLogger('error'));
+}
+
+describe('StandardProgram.dayPattern round-trip', () => {
+  it('get_program returns non-null day_pattern for a dow-mode program', async () => {
+    const app = makeAppWithProgram();
+    const sid = await initSession(app);
+    const resp = await callTool(app, sid, 'get_program', {
+      controller_id: 317416,
+      program_id: 8621589,
+      program_type: 'Standard',
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    const prog = JSON.parse(resp.result!.content[0]!.text) as Record<string, unknown>;
+    expect(prog.day_pattern).toBe('0001001');
+    expect(prog.standard_program_day_pattern).toBe('dow');
+    expect(prog.days_run).toEqual(['WEDNESDAY', 'SATURDAY']);
+  });
+
+  it('dump_controller_snapshot populates day_pattern for a dow-mode program', async () => {
+    const app = makeAppWithProgram();
+    const sid = await initSession(app);
+    const dumpResp = await callTool(app, sid, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(dumpResp.result!.content[0]!.text) as {
+      controller: { programs: Array<Record<string, unknown>> };
+    };
+    const prog = snap.controller.programs.find((p) => p.id === 8621589);
+    expect(prog).toBeDefined();
+    expect(prog!.day_pattern).toBe('0001001');
+    expect(prog!.standard_program_day_pattern).toBe('dow');
+  });
+
+  it('update_standard_program preview accepts the captured day_pattern without error', async () => {
+    const app = makeAppWithProgram();
+    const sid = await initSession(app);
+    // Simulate the restore workflow: take the snapshotted program and replay it
+    // through update_standard_program with preview: true.
+    const previewResp = await callTool(app, sid, 'update_standard_program', {
+      preview: true,
+      program_id: 8621589,
+      controller_id: 317416,
+      name: 'xxx',
+      program_type: 1,
+      day_pattern: '0001001',
+      standard_program_day_pattern: 'dow',
+      interval_days: null,
+      series_start_epoch_seconds: null,
+      start_times: ['06:00'],
+      zone_run_times: [{ zone_number: 1, run_time_group_id: 201 }],
+      schedule_adjustment_ids: [],
+      seasonal_adjustment_factor_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      valid_from_epoch_seconds: null,
+      valid_to_epoch_seconds: null,
+      ignore_rain_sensor: false,
+    });
+    expect(previewResp.result?.isError).toBeFalsy();
+    const payload = JSON.parse(previewResp.result!.content[0]!.text) as {
+      preview: boolean;
+      variables: Record<string, unknown>;
+    };
+    expect(payload.preview).toBe(true);
+    expect(payload.variables.day_pattern).toBe('0001001');
+    expect(payload.variables.standard_program_day_pattern).toBe('dow');
+  });
+});

@@ -146,7 +146,17 @@ const StandardProgramBaseShape = {
   controller_id: z.number().int(),
   name: z.string(),
   program_type: z.number().int(),
-  day_pattern: z.string(),
+  day_pattern: z
+    .string()
+    .describe(
+      'Required by the Hydrawise mutation regardless of mode. ' +
+        'For dow mode: 7-character ASCII bitmap with position 0 = Sunday, 1 = Monday, …, 6 = Saturday; ' +
+        "'1' = run on that day, '0' = skip. " +
+        "Examples: \"0001001\" = Wed+Sat (Denver Water Stage 1), \"0111110\" = weekdays, \"1111111\" = every day. " +
+        'For even/odd/interval modes the mutation still requires this field — pass the current value ' +
+        'from get_program (or a neutral placeholder like "1111111") since Hydrawise ignores it when ' +
+        'standard_program_day_pattern is not "dow".',
+    ),
   standard_program_day_pattern: z.string().nullable(),
   interval_days: z.number().int().nullable().describe('Repeat interval for interval-based programs, in days (StandardProgram periodicity.period Int).'),
   series_start_epoch_seconds: z.number().int().nullable().describe('Series start date as Unix timestamp, in seconds (StandardProgram periodicity.seriesStart.timestamp Int).'),

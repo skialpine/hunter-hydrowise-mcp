@@ -845,6 +845,7 @@ export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
           ignoreRainSensor
           daysRun
           standardProgramDayPattern
+          dayPattern
           periodicity {
             period
             seriesStart {
@@ -922,6 +923,9 @@ export interface StandardProgramRead {
   ignoreRainSensor: boolean;
   daysRun: string[];
   standardProgramDayPattern: string | null;
+  // 7-char bitmap "SMTWTFS" — '1' = run, '0' = skip, position 0 = Sunday.
+  // Only populated when standardProgramDayPattern = "dow"; null for even/odd/interval modes.
+  dayPattern: string | null;
   periodicity: { period: number; seriesStart: { timestamp: number } | null } | null;
   // The schema's `timeRange: Unit!` is non-null at the wrapper; only the inner validFrom/validTo are nullable (null = unbounded on that side). Keep the wrapper non-null to match.
   timeRange: { validFrom: number | null; validTo: number | null };
