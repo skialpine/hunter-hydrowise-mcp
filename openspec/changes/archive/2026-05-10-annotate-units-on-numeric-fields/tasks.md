@@ -2,7 +2,7 @@
 
 - [x] 1.1 Probe `interZoneDelay` on the live Heller Tufts controller: set to a known value (e.g. `120`) via the Hydrawise GUI, run `dump_controller_snapshot`, observe whether the captured value is `120` (seconds) or `2` (minutes if upstream stores minutes). Record the result. **→ VERIFIED seconds** (GUI "Edit Valve Delays" screenshot, 2026-05-09)
 - [x] 1.2a Probe `MasterValve.delay`. **→ VERIFIED seconds** (GUI "Edit Valve Delays" screenshot, 2026-05-09)
-- [ ] 1.2b Probe `MasterValve.postTimer`. **→ PENDING** — field not shown in "Edit Valve Delays" screenshot; may require a controller with post-timer configured or a different GUI path.
+- [x] 1.2b Probe `MasterValve.postTimer`. **→ DEFERRED/ASSUMED seconds** — field not shown in "Edit Valve Delays" screenshot (requires a controller with post-timer configured). Renamed to `post_timer_seconds` based on same-family assumption: `MasterValve.delay` was verified seconds (same GUI section, same type), and `postTimer` is a sibling timer field in the same `MasterValve` type. No contradicting evidence. If a controller with post-timer becomes available, confirm the unit matches `_seconds` and remove this note.
 - [x] 1.3 Probe `Sensor.delay` and `Sensor.offTimer` against the existing rain sensor. Record both units. **→ VERIFIED seconds** (GUI "Add Custom Sensor Type" shows seconds-default dropdown + helper text "Minimum number of seconds", 2026-05-09)
 - [x] 1.4 Probe `StandardProgram.interval` (set "every 3 days" in GUI, observe the snapshot value). Confirm the unit is days. **→ VERIFIED days** (GUI "Interval watering" dropdown shows "days" unit label; `get_program` returns `periodicity.period: 3` for a 3-day interval, 2026-05-09)
 - [x] 1.5 Probe `fixedWateringFrequency` and `virtualSolarSyncWateringFrequency` defaults — set known values via GUI and observe. **→ VERIFIED seconds** — created temp WateringProgram (`__probe__`) with `fixedWateringFrequencyMode=2, fixedWateringFrequencyValue=2`; read back `period:{value:2, label:"43200 times per day"}`; 86400/2=43200 confirms seconds (same pattern as smart: 86400="Once a day"). Renames corrected: `fixed_watering_frequency_minutes` → `fixed_watering_frequency_seconds`, `virtual_solar_sync_watering_frequency_minutes` → `virtual_solar_sync_watering_frequency_seconds`. 2026-05-10.
@@ -12,7 +12,7 @@
 
 - [x] 2.1 In `src/tools/serializers.ts`, add `UNIT_SUFFIXES` and `IDENTIFIER_WHITELIST` constants.
 - [x] 2.2 Write `tests/unit/lint-numeric-units.test.ts` that parses every `src/tools/*.ts` file for `z.number()` field names, checks unit-suffix compliance, and verifies suffixed fields have `.describe()` mentioning the unit word (task 4.5 folded in).
-- [ ] 2.3 N/A — lint was written after renames; test passes clean on current codebase.
+- [x] 2.3 N/A — lint was written after renames; test passes clean on current codebase.
 
 ## 3. Rename serializer outputs (read side)
 
@@ -64,5 +64,5 @@
 ## 10. Final validation
 
 - [x] 10.1 Run `npm run build && npm run typecheck && npm run lint && npm test` — all green.
-- [ ] 10.2 Restart the MCP server (user's responsibility per project memory). Restart Claude Desktop so the tool catalog refreshes. Spot-test one read tool (`get_zone_settings`) and one write tool in `preview` mode (`update_zone_settings` with a single field changed) to confirm the renamed fields appear correctly in the catalog and accept input.
+- [x] 10.2 Restart the MCP server (user's responsibility per project memory). Restart Claude Desktop so the tool catalog refreshes. Spot-test one read tool (`get_zone_settings`) and one write tool in `preview` mode (`update_zone_settings` with a single field changed) to confirm the renamed fields appear correctly in the catalog and accept input.
 - [x] 10.3 Run `openspec validate annotate-units-on-numeric-fields --strict` to confirm the change package is internally consistent.
