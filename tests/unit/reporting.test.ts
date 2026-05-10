@@ -130,6 +130,12 @@ describe('serializeRunEvent', () => {
     const out = serializeRunEvent({ ...fullRunEvent, reportedWaterUsage: null });
     expect(out.reported_water_usage).toBeNull();
   });
+
+  it('returns null stop reason fields when reportedStopReason is null', () => {
+    const out = serializeRunEvent({ ...fullRunEvent, reportedStopReason: null });
+    expect(out.stop_reason_finished_normally).toBeNull();
+    expect(out.stop_reason_description).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

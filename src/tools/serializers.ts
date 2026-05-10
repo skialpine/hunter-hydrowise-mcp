@@ -284,7 +284,8 @@ export function serializeRunEvent(e: RunEventType): Record<string, unknown> {
       ? { value: e.reportedWaterUsage.value, unit: e.reportedWaterUsage.unit }
       : null,
     stop_reason_finished_normally: e.reportedStopReason?.finishedNormally ?? null,
-    stop_reason_description: e.reportedStopReason?.description ?? [],
+    // null when reportedStopReason is absent — consistent with stop_reason_finished_normally
+    stop_reason_description: e.reportedStopReason?.description ?? null,
     reported_current: e.reportedCurrent
       ? { value: e.reportedCurrent.value, unit: e.reportedCurrent.unit }
       : null,
@@ -329,7 +330,8 @@ export function serializeRunSummaryDetails(
 export function serializeProgramStartTime(p: ProgramStartTimeRead): Record<string, unknown> {
   const time = p.time;
   let timeString: string | null = null;
-  if (time && 'value' in time) timeString = time.value;
+  if (typeof time === 'string') timeString = time;
+  else if (time && 'value' in time) timeString = time.value;
   else if (time && 'hour' in time)
     timeString = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
   return {

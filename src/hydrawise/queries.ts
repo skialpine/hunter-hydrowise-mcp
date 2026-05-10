@@ -604,7 +604,11 @@ export interface WateringTriggersRead {
 export interface ProgramStartTimeRead {
   id: number;
   type: { value: number; label?: string | null } | null;
-  time: { value: string } | { hour: number; minute: number } | null;
+  // Time is a custom scalar — the API returns a bare time string (e.g. "08:30").
+  // The legacy object branches ({ value } / { hour, minute }) are unreachable via
+  // the current query but kept as a defensive union in case a future query variant
+  // returns a structured shape; the serializer handles all three.
+  time: string | { value: string } | { hour: number; minute: number } | null;
   // EVEN | ODD | DAYS | MONDAY..SUNDAY
   wateringDays: string[] | null;
   application: {
@@ -961,9 +965,7 @@ export const PROGRAM_START_TIMES_QUERY = /* GraphQL */ `
             type {
               value
             }
-            time {
-              value
-            }
+            time
             wateringDays
             application {
               all
