@@ -27,7 +27,7 @@ All `startTime: DateTime!` and `endTime: DateTime!` fields are object types requ
 - Fan-out tool uses per-zone queries to avoid the `Controller.zones { status }` 500.
 - `get_controller_schedule` returns an array of `{ zone_id, zone_name, zone_number, runs[] }` — not a keyed map — so callers get zone name alongside run data without a secondary lookup, and integer zone IDs aren't used as JSON object keys.
 - Fan-out fails fast (via `Promise.all`) if any zone query errors — no silent partial results.
-- Zone-not-found on single-zone tools returns `api_error`, not `null` / `[]`.
+- Zone-not-found on single-zone tools returns `not_found`, not `null` / `[]`.
 - Validation error when `from >= until`, including when caller supplies only `until_epoch_seconds` in the past.
 
 **Non-Goals:**
