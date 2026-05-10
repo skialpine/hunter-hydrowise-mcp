@@ -55,12 +55,12 @@ export const UNIT_SUFFIXES: ReadonlySet<'_minutes' | '_seconds' | '_days' | '_pe
 // dimensionless calibration ratios. LocalizedValueType fields (value varies per user account
 // preference) use {value, unit} wrapping instead of suffixes and are also exempt from this list.
 export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
-  // Identifiers (singular and plural array forms)
+  // Identifiers: singular FKs, plural FK arrays, and compound-id arrays
   'id', 'zone_id', 'controller_id', 'program_id', 'sensor_id', 'expander_id',
   'model_id', 'run_time_group_id', 'custom_sensor_type_id', 'customer_id',
   'pre_configured_watering_schedule_id', 'note_id',
   'zone_ids', 'sensor_ids', 'schedule_adjustment_ids',
-  // ProgramStartTime zone/schedule id arrays (Int arrays of ids, not unit-bearing)
+  // ProgramStartTime zone/schedule id arrays ([Int] arrays of ids, not unit-bearing values)
   'zones', 'schedules',
   // Zone / device numbers (ordinal, not unit-bearing)
   'zone_number', 'input_number', 'number',
@@ -514,7 +514,7 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
 // =============================================================================
 
 // Full inlined shape for an AdvancedProgram entry. Companion to serializeStandardProgram;
-// both share `id`, `name`, `program_type`, `applies_to_zones`, `monthly_watering_adjustments`,
+// both share `id`, `name`, `program_type`, `applies_to_zones`, `monthly_watering_adjustment_percents`,
 // `scheduling_method`, `schedule_adjustment_ids` at the top level. AdvancedProgram-specific
 // fields (zone_specific, advanced_program_id, scope, watering_frequency, run_time_group)
 // follow.

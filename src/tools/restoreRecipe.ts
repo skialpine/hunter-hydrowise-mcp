@@ -153,12 +153,13 @@ export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
   const caveats: string[] = [];
   const c = snapshot.controller;
 
-  // NOTE: The v5-compatibility guard below is intentionally unreachable in production.
-  // buildRestoreCaveats is only called from backup.ts at capture time, which always passes a
-  // freshly-built v6 snapshot — so snapshot_version < 6 can never be true here.
-  // The v5 warning is surfaced where it actually matters: at restore time in the
-  // restore-irrigation-backup skill (SKILL.md), which explicitly stops and warns the user
-  // before replaying a v5 recipe against this server.
+  // NOTE: The v5-compatibility guard below is intentionally unreachable in all current callers.
+  // buildRestoreCaveats is called from backup.ts at capture time (always passes a freshly-built
+  // v6 snapshot) and from unit tests (all fixtures hardcode snapshot_version: 6), so
+  // snapshot_version < 6 can never be true here. The guard is retained so that any future
+  // caller that passes an older snapshot gets the warning rather than silently proceeding.
+  // The user-facing v5 incompatibility block lives in the restore-irrigation-backup skill
+  // (SKILL.md), which explicitly hard-stops and warns before replaying a pre-v6 recipe.
   if (snapshot.snapshot_version < 6) {
     caveats.push(
       `This snapshot was captured by server version ${snapshot.snapshot_version} (pre-v6). The _restore_recipe args use the old un-suffixed field names (e.g. cycle_custom_time, factors, interval) which are incompatible with the current server's v6 naming convention. Do NOT replay this snapshot's recipe against the current server — field names will fail Zod validation. Use the server version that captured this snapshot, or manually translate field names to the v6 convention.`,
