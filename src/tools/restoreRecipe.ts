@@ -496,8 +496,11 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
       // Only global_master_valve is unreadable for STANDARD zones — the _unreadable_fields list
       // on the snapshot contains all ADVANCED-mode fields too, but those don't exist in the
       // STANDARD schema. Emit a targeted note rather than the ADVANCED unreadable list.
-      const standardNote = s.global_master_valve == null
-        ? 'global_master_valve is not readable — fetch live state via get_zone_settings and supply the actual value before applying.'
+      const missingRequired: string[] = [];
+      if (s.global_master_valve == null) missingRequired.push('global_master_valve');
+      if (s.icon == null) missingRequired.push('icon');
+      const standardNote = missingRequired.length > 0
+        ? `Field(s) null in snapshot: ${missingRequired.join(', ')}. Fetch live state via get_zone_settings and supply actual values — these fields are required and the tool will reject null.`
         : undefined;
       push(
         'update_zone_standard',

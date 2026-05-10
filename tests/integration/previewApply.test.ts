@@ -476,4 +476,57 @@ describe('preview/apply contract', () => {
     expect(resp.result?.isError).toBe(true);
     expect(resp.result?.content[0]?.text).toMatch(/^config_error:.*Advanced program 6390999 not found/);
   });
+
+  // -------------------------------------------------------------------------
+  // update_zone_standard: icon is required upstream
+  // -------------------------------------------------------------------------
+
+  it('update_zone_standard preview succeeds when icon is supplied (typical no-icon-change call)', async () => {
+    let called = false;
+    const app = makeApp({
+      updateZoneStandard: async () => {
+        called = true;
+        return { id: 2063156 };
+      },
+    });
+    // Typical call: updating cycle/soak, passing current icon from get_zone_settings.
+    const resp = await callTool(app, 'update_zone_standard', {
+      zone_id: 2063156,
+      name: '21. Patio Hill',
+      number: 21,
+      icon: 10,
+      global_master_valve: -1,
+      watering_adjustment_percent: 100,
+      cycle_soak_enable: true,
+      cycle_custom_time_minutes: 6,
+      soak_custom_time_minutes: 50,
+      preview: true,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean;
+      operation: string;
+      variables: { zone_id: number; icon: number; cycle_soak_enable: boolean };
+    };
+    expect(payload.preview).toBe(true);
+    expect(payload.operation).toBe('updateZoneStandard');
+    expect(payload.variables.zone_id).toBe(2063156);
+    expect(payload.variables.icon).toBe(10);
+    expect(payload.variables.cycle_soak_enable).toBe(true);
+  });
+
+  it('update_zone_standard rejects when icon is omitted (Zod enforces required)', async () => {
+    const app = makeApp();
+    const resp = await callTool(app, 'update_zone_standard', {
+      zone_id: 2063156,
+      name: '21. Patio Hill',
+      number: 21,
+      global_master_valve: -1,
+      watering_adjustment_percent: 100,
+      cycle_soak_enable: true,
+      // icon intentionally omitted — upstream would return "Missing icon"
+    });
+    expect(resp.result?.isError).toBe(true);
+  });
 });

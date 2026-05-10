@@ -461,7 +461,7 @@ export class HydrawiseApi {
     // Pass sensor_ids explicitly if you know the zone's current sensor IDs.
     const vars: Record<string, unknown> = {
       zoneId: payload.zone_id,
-      icon: payload.icon ?? null,
+      icon: payload.icon,
       iconFileId: payload.icon_file_id ?? null,
       name: payload.name,
       number: payload.number,

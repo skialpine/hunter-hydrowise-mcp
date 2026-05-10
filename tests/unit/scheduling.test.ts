@@ -54,6 +54,7 @@ const validStandardPayload = {
   zone_id: 100,
   name: 'Front Lawn',
   number: 1,
+  icon: 4,
   global_master_valve: -1,
   watering_adjustment_percent: 100,
   cycle_soak_enable: false,
@@ -117,12 +118,24 @@ describe('ZoneStandardShape', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects when icon is missing', () => {
+    const { icon: _icon, ...withoutIcon } = validStandardPayload;
+    const result = ZoneStandardSchema.safeParse(withoutIcon);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects when icon is null', () => {
+    const result = ZoneStandardSchema.safeParse({ ...validStandardPayload, icon: null });
+    expect(result.success).toBe(false);
+  });
+
   it('preview mode returns operation name updateZoneStandard without calling apply', async () => {
     const apply = vi.fn(async () => ({ id: 100 }));
     const payload = {
       zone_id: 100,
       name: 'Front Lawn',
       number: 1,
+      icon: 4,
       global_master_valve: -1,
       watering_adjustment_percent: 100,
       cycle_soak_enable: false,

@@ -1078,7 +1078,7 @@ export interface ZoneStandardUpdateInput {
   global_master_valve: number;
   watering_adjustment_percent: number;
   cycle_soak_enable: boolean;
-  icon?: number | null;
+  icon: number;
   icon_file_id?: number | null;
   cycle_custom_time_minutes?: number | null;
   soak_custom_time_minutes?: number | null;
