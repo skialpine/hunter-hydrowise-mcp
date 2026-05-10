@@ -769,7 +769,11 @@ function requireExpander(op: string, value: unknown): { id: number; name: string
   return { id: v.id, name: v.name, number: v.number };
 }
 
-const NOTE_TYPES = ['fault', 'location', 'repair', 'comment'] as const;
+const NOTE_TYPES: readonly string[] = ['fault', 'location', 'repair', 'comment'];
+
+function isNoteType(x: unknown): x is NoteType {
+  return typeof x === 'string' && NOTE_TYPES.includes(x);
+}
 
 function requireNote(op: string, value: unknown): { id: number; note: string; type: NoteType; pinnedToTop: boolean; lastUpdatedAt: { value: string } | null } {
   if (!value || typeof value !== 'object') {
@@ -779,16 +783,26 @@ function requireNote(op: string, value: unknown): { id: number; note: string; ty
   if (typeof v.id !== 'number' || typeof v.note !== 'string' || typeof v.pinnedToTop !== 'boolean') {
     throw new HydrawiseMutationError(`${op} returned an unexpected shape`);
   }
-  if (typeof v.type !== 'string' || !NOTE_TYPES.includes(v.type as NoteType)) {
+  if (!isNoteType(v.type)) {
     throw new HydrawiseMutationError(`${op} returned unexpected note type: ${JSON.stringify(v.type)}`);
   }
-  if (v.lastUpdatedAt != null) {
-    const lua = v.lastUpdatedAt as { value?: unknown };
-    if (typeof lua !== 'object' || typeof lua.value !== 'string') {
-      throw new HydrawiseMutationError(`${op} returned unexpected lastUpdatedAt shape`);
-    }
+  // lastUpdatedAt: must be either null or { value: string }. Reject undefined explicitly so the
+  // returned shape exactly matches what the type signature claims.
+  let normalizedLua: { value: string } | null;
+  if (v.lastUpdatedAt === null || v.lastUpdatedAt === undefined) {
+    normalizedLua = null;
+  } else if (typeof v.lastUpdatedAt === 'object' && typeof (v.lastUpdatedAt as { value?: unknown }).value === 'string') {
+    normalizedLua = v.lastUpdatedAt as { value: string };
+  } else {
+    throw new HydrawiseMutationError(`${op} returned unexpected lastUpdatedAt shape`);
   }
-  return value as ReturnType<typeof requireNote>;
+  return {
+    id: v.id,
+    note: v.note,
+    type: v.type,
+    pinnedToTop: v.pinnedToTop,
+    lastUpdatedAt: normalizedLua,
+  };
 }
 
 function requireLocation(op: string, value: unknown): LocationRead {
@@ -799,16 +813,17 @@ function requireLocation(op: string, value: unknown): LocationRead {
 }
 
 // requireStatus throws on WARNING (in addition to ERROR / null / malformed). Used by destructive
-// mutations (delete_*_note) where WARNING typically signals "did nothing because the entity didn't
-// exist" — the AI restoring needs to distinguish that from clean success. start_zone / stop_zone
-// etc. continue to use client.mutate() which still accepts WARNING (zone-control ops legitimately
-// return WARNING for "zone is already running").
-function requireStatus(op: string, value: unknown): StatusCodeAndSummary {
+// mutations (delete_*_note) where WARNING signals "did nothing because the entity didn't exist".
+// start_zone / stop_zone use client.mutate() which still accepts WARNING (zone-control ops
+// legitimately return WARNING for "zone is already running").
+function requireStatus(op: string, value: unknown): { status: 'OK'; summary: string } {
   if (!value || typeof value !== 'object') {
     throw new HydrawiseMutationError(`${op} returned ${JSON.stringify(value ?? null)}; the operation may not have taken effect`);
   }
   const v = value as { status?: unknown; summary?: unknown };
-  if (v.status === 'OK') return value as StatusCodeAndSummary;
+  if (v.status === 'OK') {
+    return { status: 'OK', summary: typeof v.summary === 'string' ? v.summary : '' };
+  }
   const summary = typeof v.summary === 'string' ? v.summary : 'no summary provided';
   throw new HydrawiseMutationError(`${op} returned ${String(v.status)}: ${summary}`);
 }

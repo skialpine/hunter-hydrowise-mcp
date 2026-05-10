@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { HydrawiseAPIError } from '../errors.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
 import {
@@ -74,8 +75,9 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
                 // program_type 'Standard' must be fetchable via getStandardProgram. A null
                 // here means upstream lied (race? renamed __typename?) — fail the snapshot
                 // rather than silently downgrade to a thin entry the AI would mistake for
-                // "this program has no schedule details."
-                throw new Error(
+                // "this program has no schedule details." HydrawiseAPIError categorizes this
+                // as api_error (upstream contract violation), not internal_error (our bug).
+                throw new HydrawiseAPIError(
                   `Snapshot integrity violation: program ${p.id} ("${p.name}") appears in list_programs as Standard but getStandardProgram returned null. The snapshot would be incomplete.`,
                 );
               }

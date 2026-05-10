@@ -138,7 +138,7 @@ export function registerControllerConfigTools(
   server.registerTool(
     'update_controller_master_valve',
     {
-      description: `${PHYSICAL} assign a controller's master valve by zone number. Pass \`zone_number: 0\` to disable the master valve entirely (sentinel for "no master valve"); any other integer designates that zone as the master valve. Pass \`preview: true\` to dry-run.`,
+      description: `${PHYSICAL} assign a controller's master valve by zone number. Per the schema's \`Zone.masterValve\` doc: pass \`zone_number: -1\` to accept the controller's global default; \`0\` to force always-disabled (overrides the global setting); any other integer designates that zone as the master valve. Pass \`preview: true\` to dry-run.`,
       inputSchema: UpdateControllerMasterValveInput,
     },
     async ({ controller_id, zone_number, preview }) =>

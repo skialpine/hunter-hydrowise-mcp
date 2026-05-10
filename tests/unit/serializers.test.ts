@@ -164,6 +164,20 @@ describe('serializeLocation', () => {
     expect(out.latitude).toBeNull();
     expect(out.longitude).toBeNull();
   });
+
+  it('emits null (not undefined / missing key) for every absent field', () => {
+    // Cast through unknown to simulate a malformed upstream response missing optional fields.
+    const sparse = { id: 7, coordinates: null } as unknown as LocationRead;
+    const out = serializeLocation(sparse);
+    // After JSON round-trip, missing keys would disappear; null keys survive. We need null.
+    const roundTripped = JSON.parse(JSON.stringify(out));
+    expect(roundTripped).toHaveProperty('address', null);
+    expect(roundTripped).toHaveProperty('country', null);
+    expect(roundTripped).toHaveProperty('state', null);
+    expect(roundTripped).toHaveProperty('locality', null);
+    expect(roundTripped).toHaveProperty('latitude', null);
+    expect(roundTripped).toHaveProperty('longitude', null);
+  });
 });
 
 describe('serializeTimeZone', () => {

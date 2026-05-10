@@ -286,15 +286,16 @@ describe('dump_controller_snapshot v2', () => {
     expect(program.per_zone_run_times).toHaveLength(1);
   });
 
-  it('throws snapshot integrity error when getStandardProgram returns null for a Standard program in the list', async () => {
+  it('throws snapshot integrity error (api_error kind) when getStandardProgram returns null for a Standard program in the list', async () => {
     const app = makeApp({
       // list_programs claims this is a Standard program, but getStandardProgram returns null —
-      // a contract violation that snapshot must surface, not silently downgrade.
+      // an upstream contract violation that should surface as api_error (not internal_error,
+      // which would suggest our bug).
       getStandardProgram: async () => null,
     });
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBe(true);
-    expect(resp.result?.content[0]?.text).toMatch(/integrity violation/i);
+    expect(resp.result?.content[0]?.text).toMatch(/^api_error: Snapshot integrity violation/);
   });
 
   it('program_type discriminator is consistent between thin entries and inlined details', async () => {

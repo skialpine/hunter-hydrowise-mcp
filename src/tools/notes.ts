@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
-import { serializeNote } from './serializers.js';
+import { nonNull, serializeNote } from './serializers.js';
 import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
@@ -65,9 +65,7 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     async ({ controller_id }) =>
       wrap('list_controller_notes', async () => {
         const controller = await api.getController(controller_id);
-        // Schema permits null members in [ControllerNote]!; filter them out before serialization.
-        const notes = (controller.controllerNotes ?? []).filter((n): n is NonNullable<typeof n> => n != null);
-        return jsonResult(notes.map(serializeNote));
+        return jsonResult(nonNull(controller.controllerNotes).map(serializeNote));
       }),
   );
 
@@ -81,9 +79,7 @@ export function registerNotesTools(server: McpServer, api: HydrawiseApi, logger?
     async ({ zone_id }) =>
       wrap('list_zone_notes', async () => {
         const zone = await api.getZoneFull(zone_id);
-        // Schema permits null members in [ZoneNote]!; filter them out before serialization.
-        const notes = (zone.zoneNotes ?? []).filter((n): n is NonNullable<typeof n> => n != null);
-        return jsonResult(notes.map(serializeNote));
+        return jsonResult(nonNull(zone.zoneNotes).map(serializeNote));
       }),
   );
 

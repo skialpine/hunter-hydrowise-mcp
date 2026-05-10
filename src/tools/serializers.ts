@@ -43,7 +43,8 @@ const ZONE_UNREADABLE_FIELDS = [
   'current_monitoring_value',
 ] as const satisfies readonly (keyof ZoneWritable)[];
 
-function nonNull<T>(arr: (T | null)[] | null | undefined): T[] {
+// Several Hydrawise list types declare nullable members ([Expander], [Module], [ZoneNote]!, [ControllerNote]!, [ExpanderFirmware]); strip nulls so per-element serializers can be null-blind. Don't "simplify" to `arr ?? []` — runtime nulls would crash with "Cannot read properties of null".
+export function nonNull<T>(arr: (T | null)[] | null | undefined): T[] {
   return (arr ?? []).filter((x): x is T => x != null);
 }
 
@@ -86,14 +87,17 @@ export function serializeController(controller: Controller): Record<string, unkn
 }
 
 export function serializeLocation(loc: LocationRead): Record<string, unknown> {
+  // Explicitly coalesce undefined → null so JSON.stringify emits the keys with null values
+  // rather than dropping them entirely. The snapshot contract is "every documented field appears
+  // as null OR a typed value", never "key absent."
   return {
     id: loc.id,
     latitude: loc.coordinates?.latitude ?? null,
     longitude: loc.coordinates?.longitude ?? null,
-    address: loc.address,
-    country: loc.country,
-    state: loc.state,
-    locality: loc.locality,
+    address: loc.address ?? null,
+    country: loc.country ?? null,
+    state: loc.state ?? null,
+    locality: loc.locality ?? null,
   };
 }
 
@@ -345,8 +349,9 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
           series_start: p.periodicity.seriesStart?.value ?? null,
         }
       : null,
-    valid_from: p.timeRange?.validFrom ?? null,
-    valid_to: p.timeRange?.validTo ?? null,
+    // timeRange wrapper is non-null (Unit! per schema); inner validFrom/validTo are nullable.
+    valid_from: p.timeRange.validFrom,
+    valid_to: p.timeRange.validTo,
     schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
     applies_to_zones: p.appliesToZones.map((z) => ({
       id: z.id,

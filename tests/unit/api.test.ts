@@ -306,6 +306,15 @@ describe('HydrawiseApi — controller-config mutations', () => {
       .rejects.toThrow(/unexpected lastUpdatedAt shape/);
   });
 
+  it('createZoneNote normalizes undefined lastUpdatedAt to null (no type lie)', async () => {
+    const harness = fakeRawClient();
+    // Upstream omits lastUpdatedAt entirely (vs. setting it to null) — the helper should normalize.
+    harness.setNextResult({ createZoneNote: { id: 7, note: 'x', type: 'fault', pinnedToTop: false } });
+    const api = new HydrawiseApi(harness.client);
+    const out = await api.createZoneNote(2062869, { note: 'x', type: 'fault' });
+    expect(out.lastUpdatedAt).toBeNull();
+  });
+
   it('deleteZoneNote throws (not silently passes) when upstream returns WARNING', async () => {
     const harness = fakeRawClient();
     // WARNING typically means "the note didn't exist" — the AI restoring needs to know
