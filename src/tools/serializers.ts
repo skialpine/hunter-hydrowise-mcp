@@ -448,14 +448,17 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     // timeRange wrapper is non-null (Unit! per schema); inner validFrom/validTo are nullable.
     valid_from: p.timeRange.validFrom,
     valid_to: p.timeRange.validTo,
-    schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
-    applies_to_zones: p.appliesToZones.map((z) => ({
+    // Defensive `?? []` on schema-declared non-null arrays — Hydrawise demonstrably
+    // violates `!` (see CLAUDE.md gotcha re Zone.status.lastRun). A null upstream array
+    // would crash the whole snapshot via `Promise.all` rejection in dump_controller_snapshot.
+    schedule_adjustment_ids: (p.conditionalWateringAdjustments ?? []).map((a) => a.id),
+    applies_to_zones: (p.appliesToZones ?? []).map((z) => ({
       id: z.id,
       number: z.number.value,
       name: z.name,
     })),
     // RunTimeGroup.duration is minutes; startZone's customRunDuration is seconds — don't conflate.
-    per_zone_run_times: p.applications.map((a) => ({
+    per_zone_run_times: (p.applications ?? []).map((a) => ({
       zone_id: a.zone.id,
       zone_number: a.zone.number.value,
       run_time_group_id: a.runTimeGroup.id,
@@ -489,7 +492,8 @@ export function serializeAdvancedProgram(p: AdvancedProgramRead): Record<string,
     zone_specific: p.zoneSpecific,
     monthly_watering_adjustments: p.monthlyWateringAdjustments,
     scheduling_method: p.schedulingMethod?.value ?? null,
-    schedule_adjustment_ids: p.conditionalWateringAdjustments.map((a) => a.id),
+    // Defensive `?? []` matches serializeStandardProgram — same `!`-violation gotcha.
+    schedule_adjustment_ids: (p.conditionalWateringAdjustments ?? []).map((a) => a.id),
     // Flatten the ProgramWateringFrequency wrapper. The schema declares both the wrapper
     // (`wateringFrequency: ProgramWateringFrequency!`) and `period: WateringPeriodicity!`
     // as non-null, but Hydrawise demonstrably violates `!` declarations elsewhere (see
@@ -512,7 +516,7 @@ export function serializeAdvancedProgram(p: AdvancedProgramRead): Record<string,
           duration_minutes: p.runTimeGroup.duration,
         }
       : null,
-    applies_to_zones: p.appliesToZones.map((z) => ({
+    applies_to_zones: (p.appliesToZones ?? []).map((z) => ({
       id: z.id,
       number: z.number.value,
       name: z.name,

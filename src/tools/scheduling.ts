@@ -5,6 +5,7 @@ import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
 import {
   MONITORING_METHODS,
+  PROGRAM_TYPES,
   WATERING_PROGRAM_TYPES,
   type WateringProgramWritable,
 } from '../hydrawise/queries.js';
@@ -246,7 +247,10 @@ export function registerSchedulingTools(
       inputSchema: {
         controller_id: z.number().int(),
         program_id: z.number().int(),
-        program_type: z.enum(['Standard', 'Advanced'] as const),
+        // Closed validation at the user-input boundary (PROGRAM_TYPES tuple in queries.ts
+        // is the single source of truth — `ProgramListEntry.program_type` keeps `| string`
+        // for read-side forward-compat, but get_program's input is intentionally closed).
+        program_type: z.enum(PROGRAM_TYPES),
       },
     },
     async ({ controller_id, program_id, program_type }) =>

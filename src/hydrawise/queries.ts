@@ -518,11 +518,21 @@ export type WateringProgramWritable =
   | SmartWateringProgramWritable
   | VssWateringProgramWritable;
 
+// Single source of truth for the known Program subtype discriminators. The Zod consumer
+// in scheduling.ts (get_program input) uses `z.enum(PROGRAM_TYPES)` for closed validation;
+// the read-shape `ProgramListEntry.program_type` keeps the `| string` extension so a
+// future upstream addition (e.g. a hypothetical third Program implementer — the cached
+// pydrawise schema has lagged the live schema before per CLAUDE.md) doesn't trip the
+// list-programs read. Coupling them via the same tuple closes the drift hazard at the
+// closed-set boundary (Zod) without regressing read-side tolerance.
+export const PROGRAM_TYPES = ['Standard', 'Advanced'] as const;
+export type ProgramType = (typeof PROGRAM_TYPES)[number];
+
 /** Discriminated program list entry (read shape, normalized). */
 export interface ProgramListEntry {
   id: number;
   name: string;
-  program_type: 'Standard' | 'Advanced' | string;
+  program_type: ProgramType | string;
   scheduling_method?: number | null;
   applies_to_zone_ids?: number[];
 }
