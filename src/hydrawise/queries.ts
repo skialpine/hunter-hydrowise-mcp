@@ -961,6 +961,9 @@ export const PROGRAM_START_TIMES_QUERY = /* GraphQL */ `
             type {
               value
             }
+            time {
+              value
+            }
             wateringDays
             application {
               all

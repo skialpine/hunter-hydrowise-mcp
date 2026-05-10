@@ -206,16 +206,16 @@ describe('serializeRunSummaryDetails', () => {
     expect(out.total_water_volume).toEqual({ value: 3.2, unit: 'gal' });
   });
 
-  it('returns zeros for null input', () => {
+  it('returns nulls for null input', () => {
     const out = serializeRunSummaryDetails(null);
-    expect(out.total_normal_run_time_minutes).toBe(0);
-    expect(out.total_actual_run_time_minutes).toBe(0);
+    expect(out.total_normal_run_time_minutes).toBeNull();
+    expect(out.total_actual_run_time_minutes).toBeNull();
     expect(out.total_water_volume).toBeNull();
   });
 
-  it('returns zeros for undefined input', () => {
+  it('returns nulls for undefined input', () => {
     const out = serializeRunSummaryDetails(undefined);
-    expect(out.total_normal_run_time_minutes).toBe(0);
-    expect(out.total_actual_run_time_minutes).toBe(0);
+    expect(out.total_normal_run_time_minutes).toBeNull();
+    expect(out.total_actual_run_time_minutes).toBeNull();
   });
 });

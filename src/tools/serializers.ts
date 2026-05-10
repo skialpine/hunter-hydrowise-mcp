@@ -284,7 +284,7 @@ export function serializeRunEvent(e: RunEventType): Record<string, unknown> {
       ? { value: e.reportedWaterUsage.value, unit: e.reportedWaterUsage.unit }
       : null,
     stop_reason_finished_normally: e.reportedStopReason?.finishedNormally ?? null,
-    stop_reason_description: e.reportedStopReason?.description ?? null,
+    stop_reason_description: e.reportedStopReason?.description ?? [],
     reported_current: e.reportedCurrent
       ? { value: e.reportedCurrent.value, unit: e.reportedCurrent.unit }
       : null,
@@ -318,8 +318,8 @@ export function serializeRunSummaryDetails(
   d: RunSummaryDetails | null | undefined,
 ): Record<string, unknown> {
   return {
-    total_normal_run_time_minutes: d?.totalNormalRunTime ?? 0,
-    total_actual_run_time_minutes: d?.totalActualRunTime ?? 0,
+    total_normal_run_time_minutes: d?.totalNormalRunTime ?? null,
+    total_actual_run_time_minutes: d?.totalActualRunTime ?? null,
     total_water_volume: d?.totalWaterVolume
       ? { value: d.totalWaterVolume.value, unit: d.totalWaterVolume.unit }
       : null,
