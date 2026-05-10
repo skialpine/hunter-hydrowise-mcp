@@ -387,12 +387,70 @@ describe('buildRestoreRecipe — programs and zones', () => {
     const zoneStep = recipe.find((s) => s.tool === 'update_zone_standard');
     expect(zoneStep).toBeDefined();
     expect(zoneStep!.depends_on).toContain(programStep!.order);
-    expect(zoneStep!.notes).toMatch(/global_master_valve/);
+    // Both icon and global_master_valve are readable for this fixture — no merge note needed.
+    expect(zoneStep!.notes).toBeFalsy();
+    expect(zoneStep!.args.global_master_valve).toBe(-1); // from master_valve_override: -1
+    expect(zoneStep!.args.icon).toBe(4);
     // ADVANCED-only fields must not appear in the STANDARD-mode step args
     expect(zoneStep!.args).not.toHaveProperty('watering_mode');
     expect(zoneStep!.args).not.toHaveProperty('watering_type');
     expect(zoneStep!.args).not.toHaveProperty('watering_frequency_mode');
     expect(zoneStep!.args).not.toHaveProperty('schedule_adjustment_ids');
+  });
+
+  it('emits a note and omits icon from args when icon is null in a STANDARD-mode snapshot', () => {
+    const recipe = buildRestoreRecipe(
+      makeMinimalSnapshot({
+        program_mode: 'STANDARD',
+        zones: [
+          {
+            id: 100,
+            name: 'Front Lawn',
+            number: 1,
+            program_start_times: [],
+            settings: {
+              zone_id: 100,
+              name: 'Front Lawn',
+              number: 1,
+              icon: null, // null — edge case (zone has no icon set)
+              master_valve_override: -1,
+              watering_adjustment_percent: 100,
+              cycle_soak_enable: false,
+              cycle_custom_time_minutes: null,
+              soak_custom_time_minutes: null,
+              flow_monitoring_method: null,
+              current_monitoring_method: null,
+              flow_monitoring_value: null,
+              current_monitoring_value: null,
+              watering_mode: null,
+              global_master_valve: null,
+              schedule_adjustment_ids: null,
+              watering_type: null,
+              run_time_minutes: null,
+              watering_frequency_mode: null,
+              fixed_watering_frequency_seconds: null,
+              smart_watering_frequency_seconds: null,
+              virtual_solar_sync_watering_frequency_seconds: null,
+              run_next_available_start_time: null,
+              pre_configured_watering_schedule_id: null,
+              monthly_adjustment_percents: null,
+              sensor_ids: null,
+              reusable_schedule: null,
+              reusable_schedule_name: null,
+              _unreadable_fields: [],
+            },
+          },
+        ],
+      }),
+    );
+    const zoneStep = recipe.find((s) => s.tool === 'update_zone_standard');
+    expect(zoneStep).toBeDefined();
+    // icon is null — note must instruct the AI to fetch live state before calling the tool.
+    expect(zoneStep!.notes).toMatch(/icon/);
+    // icon must be omitted from args (not present as null) so the incomplete args are obvious.
+    expect(zoneStep!.args).not.toHaveProperty('icon');
+    // global_master_valve is still populated from master_valve_override.
+    expect(zoneStep!.args.global_master_valve).toBe(-1);
   });
 
   it('emits update_zone_settings for ADVANCED-mode zones', () => {

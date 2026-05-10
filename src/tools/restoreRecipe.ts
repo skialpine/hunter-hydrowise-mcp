@@ -496,11 +496,12 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
       // Only global_master_valve is unreadable for STANDARD zones — the _unreadable_fields list
       // on the snapshot contains all ADVANCED-mode fields too, but those don't exist in the
       // STANDARD schema. Emit a targeted note rather than the ADVANCED unreadable list.
-      const missingRequired: string[] = [];
-      if (s.global_master_valve == null) missingRequired.push('global_master_valve');
-      if (s.icon == null) missingRequired.push('icon');
-      const standardNote = missingRequired.length > 0
-        ? `Field(s) null in snapshot: ${missingRequired.join(', ')}. Fetch live state via get_zone_settings and supply actual values — these fields are required and the tool will reject null.`
+      // global_master_valve in the update_zone_standard tool maps to zone.masterValve,
+      // which is readable and stored as master_valve_override in the snapshot.
+      // s.global_master_valve is the ADVANCED-mode unreadable field (always null);
+      // s.master_valve_override is the correct source for STANDARD-mode restores.
+      const standardNote = s.icon == null
+        ? 'icon is null in snapshot — fetch live state via get_zone_settings and supply the actual value before applying.'
         : undefined;
       push(
         'update_zone_standard',
@@ -508,9 +509,9 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
           zone_id: s.zone_id,
           name: s.name,
           number: s.number,
-          icon: s.icon,
-          // global_master_valve is not readable — null here; AI must merge from live state.
-          global_master_valve: s.global_master_valve,
+          // Omit icon when null so the incomplete args are obvious; note explains why.
+          ...(s.icon != null ? { icon: s.icon } : {}),
+          global_master_valve: s.master_valve_override,
           // watering_adjustment_percent and cycle_soak_enable default to safe values when
           // wateringSettings was absent at capture time (rare; prevents Zod rejection on replay).
           watering_adjustment_percent: s.watering_adjustment_percent ?? 100,
