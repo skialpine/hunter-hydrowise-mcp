@@ -58,8 +58,8 @@
 
 ## 9. Re-capture the user's snapshot under v6
 
-- [ ] 9.1 Invoke `dump_controller_snapshot` against the Heller Tufts controller using the new code; save via the `capture-irrigation-snapshot` skill into `snapshots/`.
-- [ ] 9.2 Spot-verify the captured JSON: `cycle_custom_time_minutes`, `soak_custom_time_minutes`, `inter_zone_delay_seconds`, `interval_days`, `monthly_adjustment_percents`, etc. all present with correct values; `snapshot_version: 6`; `_restore_recipe` args use the suffixed names.
+- [x] 9.1 Invoke `dump_controller_snapshot` against the Heller Tufts controller using the new code; save via the `capture-irrigation-snapshot` skill into `snapshots/`. **→ DONE** `snapshots/heller-tufts-317416-2026-05-10T06-00-55-116Z.json` (137 KB, 33 recipe steps, 3 caveats)
+- [x] 9.2 Spot-verify the captured JSON: `cycle_custom_time_minutes`, `soak_custom_time_minutes`, `inter_zone_delay_seconds`, `interval_days`, `monthly_adjustment_percents`, etc. all present with correct values; `snapshot_version: 6`; `_restore_recipe` args use the suffixed names. **→ VERIFIED** all v6 unit-suffixed fields present; recipe args confirmed suffixed; sensor `_observed.delay_seconds`/`off_timer_seconds` present; 2026-05-10
 
 ## 10. Final validation
 
