@@ -252,9 +252,9 @@ If a tool call fails with `Input validation error` for a field you know exists i
 
 The snapshot tool (`dump_controller_snapshot`) is read-only and per-controller. There is **no** `restore_from_backup` tool — the design (in `openspec/changes/archive/2026-05-09-add-schedule-management/design.md`) calls for the AI to diff a snapshot against current state and call the matching `update_*` tool per category. This is the LLM-native pattern: the AI sees every field it's about to change rather than relying on an opaque server-side merge. Don't reintroduce a monolithic restore tool without revisiting that decision.
 
-### `_restore_recipe` and `_caveats` (snapshot v5+)
+### `_restore_recipe` and `_caveats`
 
-The snapshot v5 envelope embeds two top-level blocks computed at capture time as pure functions of the snapshot data:
+The snapshot envelope (current version per `SNAPSHOT_VERSION` in backup.ts) embeds two top-level blocks computed at capture time as pure functions of the snapshot data:
 
 - **`_restore_recipe`**: an ordered list of `{ order, tool, args, depends_on, notes? }` steps the AI executes to apply the snapshot. Each step's `tool` is the MCP tool name (e.g. `update_zone_settings`); `args` is the snake_case payload pre-built from snapshot data; `depends_on` references prior step `order` numbers (e.g. `create_sensor` depends on the matching `create_custom_sensor_type`); optional `notes` flags fields the AI must merge from live state (e.g. `update_zone_settings` step has nulls for unreadable fields like `watering_mode` — the AI fetches via `get_zone_settings` and merges).
 - **`_caveats`**: human-readable strings describing known restore limitations specific to this snapshot — unit-pref drift between capture and restore, custom-sensor-type id reallocation, reusable schedule-id references that may have been removed, ADVANCED-mode WateringProgram subtype gaps, hardware re-wiring out-of-band, etc.
@@ -267,7 +267,7 @@ The recipe is **not** a server-side restore — it's a playbook. The AI follows 
 
 `.claude/skills/capture-irrigation-snapshot/SKILL.md` — orchestrates capture: runs `dump_controller_snapshot`, writes the JSON to `snapshots/<name>-<id>-<ISO>.json`, and ALSO captures the watering-report delta since the last capture into `snapshots/history/<id>-<from>_to_<until>.json`. The history files build permanent multi-year coverage that survives Hydrawise's ~1-year report retention. Triggered by phrases like "back up my irrigation", "snapshot my controller".
 
-Both skills live in the repo so users who clone get them automatically. They can be copied to `~/.claude/skills/` if the user prefers personal scope.
+Both skills live in the project's `.claude/skills/`. Users who **clone the repo and open it in Claude Code** (the project root, with the project trusted) get them as project-scope skills automatically. Users who install the MCP server via `npx hydrowise-mcp` from a different MCP client (Claude Desktop, etc.) get the MCP **tools** but NOT the skills — they would need to copy the skill files to their personal `~/.claude/skills/` directory if they want the orchestration workflow.
 
 ### Testing the recipe
 

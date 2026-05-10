@@ -141,7 +141,7 @@ For a multi-controller account, call `dump_controller_snapshot` once per `contro
 
 ### Skill-driven workflows
 
-This repo ships two Claude Code skills in `.claude/skills/` that orchestrate the full workflows. They're auto-discovered when you open the project in Claude Code:
+This repo ships two Claude Code skills in `.claude/skills/` that orchestrate the full workflows. Users who **clone this repo and open it as a project in Claude Code** (with the project trusted) get the skills as project-scope automatically. If you installed the MCP server via `npx hydrowise-mcp` from a different MCP client (Claude Desktop, etc.), copy the two skill directories to your personal `~/.claude/skills/` to use the orchestration workflows:
 
 - **`capture-irrigation-snapshot`** — Triggered by phrases like "back up my irrigation" or "snapshot my controller". Calls `dump_controller_snapshot`, writes the JSON to `snapshots/<name>-<id>-<ISO>.json`, and ALSO captures the watering-report delta since the last capture into `snapshots/history/<id>-<from>_to_<until>.json`. The history files build permanent multi-year coverage that survives Hydrawise's ~1-year report retention.
 - **`restore-irrigation-backup`** — Triggered by phrases like "restore my irrigation backup" or "apply this snapshot". Loads the snapshot file, verifies the target controller, presents `_caveats` for acknowledgement, and walks `_restore_recipe` step-by-step: previewing each mutation, asking for confirmation, then applying. Fail-fast on errors. Recommends capturing a fresh "savepoint" snapshot first so partial-restore failures are recoverable.

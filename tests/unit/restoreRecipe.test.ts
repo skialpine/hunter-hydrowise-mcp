@@ -543,7 +543,12 @@ describe('buildRestoreCaveats', () => {
         ],
       }),
     );
-    expect(caveats.some((c) => c.includes('input_number values reflect physical wiring'))).toBe(true);
+    // Hardware re-wiring caveat is FYI-tier (low-stakes; the skill does not block on it)
+    // — the prefix is the structural marker the skill uses to differentiate from
+    // safety-critical caveats. Assert both the prefix AND the wiring content.
+    const wiringCaveat = caveats.find((c) => c.includes('input_number values reflect physical wiring'));
+    expect(wiringCaveat).toBeDefined();
+    expect(wiringCaveat!.startsWith('FYI: ')).toBe(true);
   });
 
   it('emits a unit-pref drift caveat when watering_triggers values include unit strings', () => {

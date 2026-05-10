@@ -46,8 +46,13 @@ Apply a Hydrawise snapshot file (produced by `dump_controller_snapshot`) to a co
 
 ### 4. Present `_caveats` up front
 
-- Display the `_caveats` array verbatim to the user.
-- For each caveat, ask: "Acknowledge?"
+Caveats are tiered:
+
+- **FYI caveats** (those starting with the literal prefix `"FYI: "`) — display as a single info line; do NOT prompt for individual acknowledgement. These are reminders the user can ignore in the common case (e.g. sensor wiring hasn't changed). Bundle them after the safety-critical caveats so they don't crowd the prompt loop.
+- **Safety-critical caveats** (everything else) — display each one and ask: "Acknowledge?" The user must respond before proceeding.
+
+Specific safety-critical caveats:
+
 - If a caveat mentions **unit-pref drift** (watering triggers captured in F/mph but live account uses C/kph, etc.) — STOP. Do not proceed until the user explicitly tells you whether to convert values. Applying the recipe verbatim would produce numerically wrong results (97°F captured → 97 restored as °C scorches the lawn).
 - If a caveat mentions **custom sensor types** — note that the recipe's `create_sensor` steps reference snapshot-time `model_id`s that won't exist on the new account; you'll re-resolve the new ids after each `create_custom_sensor_type` succeeds (see step 6).
 - If a caveat mentions **unreadable fields** — note that `update_zone_settings` steps will have null values for required fields; you'll merge with live state at execute time (see step 6).
@@ -71,7 +76,9 @@ If any dependency step has not yet been successfully applied, halt with an error
 - **`update_zone_settings`**: if the step's args contain `null` for required fields (watering_mode, global_master_valve, watering_type, watering_frequency_mode, etc. — see the per-step `notes` field), call `get_zone_settings(zone_id)` first, take the live values for the null fields, and merge over the snapshot's non-null values. The MERGED payload is what you preview/apply.
 - **`create_sensor` referencing a custom type** (the step's `notes` say "model_id refers to the custom type created above"): look up the prior `create_custom_sensor_type` step's RESULT (the SensorModel object returned), extract the new `id`, and substitute it for the snapshot-time `model_id` in this step's args.
 - **`update_standard_program`**: the snapshot doesn't capture program_type / day_pattern / series_start / run_duration / ignore_rain_sensor — they arrive null. Call `get_program(controller_id, program_id, "Standard")` to fetch the live values, then merge the snapshot's non-null values over.
-- **`create_program_start_time`**: the snapshot doesn't capture all required fields (apply_all, zones, schedules, days-of-week ints). Call `list_program_start_times_for_zone(zone_id)` to inspect the live state. If a matching start time already exists, skip this step (the recipe is "create" but the data is already there). If not, build the full payload from live patterns and the snapshot's `time` value.
+- **`create_program_start_time`**: the snapshot doesn't capture all required fields (apply_all, zones, schedules, days-of-week ints) — the recipe emits the captured `time` and `zones` (translated from `zone_ids`) plus null for everything else. Call `list_program_start_times_for_zone(zone_id)` to inspect the live state.
+  - **Idempotency check** (skip if already present): match the recipe's `args.time` (HH:MM string) against each live start time's `time` field; if you find a match where the `zones` arrays overlap, the start time is already there — skip this step. Strict equality on time + any zone overlap is the right granularity (the same time can have different zone subsets, but for restore-equivalence we treat them as the same start time).
+  - If no match exists, build the full payload from the snapshot's `time`/`zones` plus live patterns (apply_all, schedules, watering_type, time_type, day-of-week ints).
 
 #### c. Preview the step
 

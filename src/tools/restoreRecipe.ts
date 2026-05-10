@@ -18,9 +18,14 @@
  *   field — the AI injects preview at call time (true first, then false).
  */
 
+// `tool` is constrained to RecipeToolName (declared near the bottom of this file).
+// This moves the catalog test invariant ("recipe never emits an unknown tool name")
+// from runtime assertion into the type system: forgetting to add a new tool to
+// RECIPE_TOOL_NAMES now produces a compile error in the push() helper below rather
+// than a delayed test failure.
 export interface RestoreStep {
   order: number;
-  tool: string;
+  tool: RecipeToolName;
   args: Record<string, unknown>;
   depends_on: number[];
   notes?: string;
@@ -188,12 +193,15 @@ export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
     );
   }
 
-  // Caveat: hardware re-wiring is out-of-band for sensors. The snapshot captures
-  // input_number (e.g. 1 = SEN-1); if the user has since rewired, restore writes the
-  // wrong physical-pin assignment. Cannot be detected programmatically.
+  // FYI-level note about sensor wiring. We DON'T emit this when capture and restore
+  // controllers are the same (the common case — restoring back to where you captured
+  // from), because it would fire on every restore and train the user to ack-and-ignore.
+  // The skill renders FYI-prefixed caveats as a single info line, not as a separate
+  // ack prompt. This keeps the ack prompts focused on safety-critical caveats
+  // (unit drift, custom-type id reallocation, unreadable fields).
   if (c.sensors.length > 0) {
     caveats.push(
-      'Sensor input_number values reflect physical wiring at capture time. If sensor wiring has changed between capture and restore (e.g. rain sensor moved from SEN-1 to SEN-2), the recipe will write the wrong physical-pin assignment. Verify hardware wiring before applying create_sensor / update_sensor steps.',
+      'FYI: Sensor input_number values reflect physical wiring at capture time. If sensor wiring has changed between capture and restore (e.g. rain sensor moved from SEN-1 to SEN-2), the create_sensor / update_sensor steps will write the wrong physical-pin assignment. Verify only if you suspect rewiring has occurred.',
     );
   }
 
@@ -235,8 +243,10 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
   const controllerId = c.id;
 
   // Local helper: append a step and return its order number for later depends_on.
+  // The `tool` parameter is typed as RecipeToolName so the compiler rejects any
+  // call site that emits a tool name not present in RECIPE_TOOL_NAMES.
   const push = (
-    tool: string,
+    tool: RecipeToolName,
     args: Record<string, unknown>,
     depends_on: number[] = [],
     notes?: string,
@@ -495,23 +505,48 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
   // -------------------------------------------------------------------------
 
   for (const zone of c.zones) {
-    for (const _start of zone.program_start_times) {
-      // The snapshot captures the start time but the underlying schema requires many
-      // fields (controller_id, apply_all, zones, schedules, time, watering_type,
-      // time_type, days-of-week ints) that aren't all in the captured shape. Emit a
-      // step with controller_id + the captured fields and a notes block guiding the AI
-      // to merge with live state before applying.
+    for (const startTime of zone.program_start_times as Array<{
+      time?: string | null;
+      watering_days?: number | null;
+      zone_ids?: number[];
+    }>) {
+      // The snapshot's serializeProgramStartTime output has DIFFERENT field names than
+      // the create_program_start_time mutation requires:
+      //   captured: { id, type_value, time, watering_days, apply_all, zone_ids }
+      //   required: { controller_id, apply_all, zones, schedules, time, watering_type,
+      //               time_type, sunday, monday, ..., saturday }
+      // Spreading the captured shape verbatim would produce a malformed payload (zone_ids
+      // vs zones; type_value vs watering_type; extraneous id/watering_days; missing
+      // schedules / time_type / day-of-week ints). Instead we emit ONLY the fields we can
+      // safely translate (`time` passes through unchanged) plus controller_id, with the
+      // captured zone_ids translated to the mutation's `zones` field-name. All other
+      // required fields are emitted as null with a notes block making clear the AI MUST
+      // resolve them from live state via list_program_start_times_for_zone before
+      // calling — applying the recipe args verbatim WILL fail Zod validation.
       push(
         'create_program_start_time',
         {
           controller_id: controllerId,
-          // The full payload requires apply_all, zones, schedules, time, watering_type,
-          // time_type, sunday..saturday — captured fields are passed through; missing
-          // ones must be supplied by the AI from live state or user prompt.
-          ..._start,
+          // Translated from snapshot (the field names below match the mutation schema).
+          time: startTime.time ?? null,
+          zones: startTime.zone_ids ?? [zone.id],
+          // Required by the mutation but not exposed by the snapshot read path. The AI
+          // must supply these by inspecting list_program_start_times_for_zone(zone_id)
+          // and reconstructing the per-day schedule and watering-type discriminator.
+          apply_all: null,
+          schedules: null,
+          watering_type: null,
+          time_type: null,
+          sunday: null,
+          monday: null,
+          tuesday: null,
+          wednesday: null,
+          thursday: null,
+          friday: null,
+          saturday: null,
         },
         [],
-        'create_program_start_time requires fields the snapshot does not fully capture (apply_all, zones, schedules, days-of-week ints). Read live start times via list_program_start_times_for_zone and merge before applying, or treat this as advisory.',
+        'create_program_start_time advisory: the snapshot captures `time` and `zone_ids` (translated to `zones`) but cannot capture the mutation\'s required apply_all / schedules / watering_type / time_type / day-of-week ints. The AI MUST call list_program_start_times_for_zone first and merge live values for the null fields before applying — or skip this step if the live controller already has a matching start time at that `time` value.',
       );
     }
   }

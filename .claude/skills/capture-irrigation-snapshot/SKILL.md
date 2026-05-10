@@ -46,7 +46,7 @@ If the user didn't specify a controller_id, call `list_controllers` first; if th
 
 - Look at `<output_dir>/history/` for prior report files matching this controller. The filename pattern is `<controller-id>-<from-date>_to_<until-date>.json`.
 - If a prior file exists: the new `from` is the prior file's `until` date. The new `until` is now (today, ISO date).
-- If no prior file exists: the new `from` is `1 year ago` (Hydrawise's max retention; older data is gone). The new `until` is now.
+- If no prior file exists: the new `from` is `1 year ago`. Hydrawise's report retention is empirically observed to be ~1 year (CLAUDE.md notes this); the actual retention may vary by account tier or change over time. If `get_watering_report` returns fewer events than expected, narrow the `from` window and try again. The new `until` is now.
 - Report-history dates use `YYYY-MM-DD` granularity (no time component) for filename readability.
 - If `from >= until` (the prior history is current), skip steps 5–6 and tell the user "history is up to date".
 
