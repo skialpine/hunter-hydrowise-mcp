@@ -235,6 +235,15 @@ The server SHALL expose an MCP tool named `set_zone_baseline` that takes a requi
 - **WHEN** an MCP client calls `set_zone_baseline` with `flow_monitoring_method: "Bogus"`
 - **THEN** the tool returns an `isError: true` Tool Execution Error and does not contact Hydrawise
 
+### Requirement: Patch tools are preferred for incremental edits
+
+The server SHALL document in its tool catalog that when making incremental, targeted changes (changing one zone's run time, adjusting a day pattern, updating cycle/soak settings, etc.) callers SHOULD prefer the focused patch tools (`update_zone_run_time_in_program`, `update_program_day_pattern`, `update_program_start_times`, `update_zone_cycle_soak`, `update_zone_watering_adjustment`) over the full-payload `update_*` tools. The full-payload tools (`update_standard_program`, `update_zone_settings`, `update_zone_standard`) SHALL remain available and are the correct choice for bulk updates, restore-recipe playback, and cases where patch tools do not cover the required fields.
+
+#### Scenario: Tool catalog provides precedence guidance
+
+- **WHEN** an MCP client requests `tools/list` and inspects the description of `update_zone_run_time_in_program`
+- **THEN** the description includes `PHYSICAL ACTION:` prefix and indicates it is the preferred tool for single-zone run-time changes within a Standard program
+
 ### Requirement: restore recipe uses update_zone_standard for STANDARD-mode controllers
 
 The `_restore_recipe` embedded in a `dump_controller_snapshot` result SHALL dispatch `update_zone_standard` (not `update_zone_settings`) for per-zone setting steps when the snapshot's `controller.program_mode` is `"STANDARD"`. When `program_mode` is `"ADVANCED"` or absent, the recipe SHALL continue to emit `update_zone_settings` steps (existing behavior). STANDARD-mode zone steps SHALL include only the fields accepted by `updateZoneStandard` (name, number, icon, global_master_valve, watering_adjustment_percent, cycle_soak_enable, cycle_custom_time_minutes, soak_custom_time_minutes, sensor_ids, flow_monitoring_method, current_monitoring_method, flow_monitoring_value, current_monitoring_value) and SHALL omit all ADVANCED-only fields.
