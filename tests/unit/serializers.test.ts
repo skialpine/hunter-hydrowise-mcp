@@ -606,7 +606,7 @@ describe('serializeController', () => {
     expect(out.hibernate_status).toBe(true);
     expect(out.status_summary).toBe('Sleeping');
     expect(out.status_icon).toBe('moon.png');
-    expect(out.accumulated_water_savings_gallons).toBe(250);
+    expect(out.accumulated_water_savings).toBe(250);
   });
 
   it('serializes non-hibernated controller with hibernate_status: false', () => {
@@ -614,7 +614,20 @@ describe('serializeController', () => {
     expect(out.hibernate_status).toBe(false);
     expect(out.status_summary).toBe('All good!');
     expect(out.status_icon).toBe('ok.png');
-    expect(out.accumulated_water_savings_gallons).toBe(100);
+    expect(out.accumulated_water_savings).toBe(100);
+  });
+
+  // Guard against runtime null on controller.status (schema says !, but the project has seen
+  // !-declared fields return null — e.g. Zone.status.lastRun). All status-derived fields must
+  // be null, not a TypeError crash.
+  it('emits null status fields when controller.status is null at runtime', () => {
+    const out = serializeController({
+      ...baseController,
+      status: null as unknown as Controller['status'],
+    });
+    expect(out.status_summary).toBeNull();
+    expect(out.status_icon).toBeNull();
+    expect(out.accumulated_water_savings).toBeNull();
   });
 
   // Task 5.2: null-path (a) — settings parent is null (older firmware)

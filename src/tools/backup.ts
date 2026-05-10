@@ -25,13 +25,15 @@ import {
 } from './restoreRecipe.js';
 import { jsonResult, runTool } from './_helpers.js';
 
-// Snapshot version bumped to 6 with unit-suffix naming convention applied to all
-// fixed-unit numeric fields. Every numeric field whose unit is fixed now carries the
-// unit as a name suffix (e.g. cycle_custom_time_minutes, inter_zone_delay_seconds,
-// interval_days). The _restore_recipe args use the same suffixed names so the recipe
-// is self-consistent. v5-and-earlier snapshots remain readable for inspection but
-// their _restore_recipe args use the old un-suffixed names and CANNOT be replayed by
-// this server version — use the server version that captured the snapshot for replay.
+// Snapshot version bumped to 7 with controller-status fields (hibernate_status,
+// status_summary, status_icon, accumulated_water_savings) added to the controller header.
+// v6 applied the unit-suffix naming convention to all fixed-unit numeric fields. Every
+// numeric field whose unit is fixed now carries the unit as a name suffix (e.g.
+// cycle_custom_time_minutes, inter_zone_delay_seconds, interval_days). The _restore_recipe
+// args use the same suffixed names so the recipe is self-consistent. v5-and-earlier
+// snapshots remain readable for inspection but their _restore_recipe args use the old
+// un-suffixed names and CANNOT be replayed by this server version — use the server version
+// that captured the snapshot for replay.
 //
 // Version history (informational; no migration logic — older snapshots are still readable):
 //   v2: STANDARD-mode complete + watering triggers + zone settings, no sensors, no Advanced
@@ -39,7 +41,7 @@ import { jsonResult, runTool } from './_helpers.js';
 //   v4: + controller.advanced_programs[] + per-zone advanced_program reference
 //   v5: + _restore_recipe[] + _caveats[] at the envelope top level
 //   v6: + unit-suffix renaming convention applied across all fixed-unit numeric fields
-//   v7: + hibernate_status, status_summary, status_icon, accumulated_water_savings_gallons in controller header (this version)
+//   v7: + hibernate_status, status_summary, status_icon, accumulated_water_savings in controller header (this version)
 export const SNAPSHOT_VERSION = 7;
 const PACKAGE_VERSION = '0.3.0';
 

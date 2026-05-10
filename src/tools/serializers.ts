@@ -93,6 +93,8 @@ export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
   'minutes', 'days',
   // Reporting run-summary period range parameters (calendar units, not physical measurements)
   'start_week', 'end_week', 'start_month', 'end_month', 'start_year', 'end_year', 'year',
+  // Controller status — unit depends on account locale (gallons or liters); no fixed-unit suffix possible
+  'accumulated_water_savings',
 ]);
 
 // Several Hydrawise list types declare nullable members ([Expander], [Module], [ZoneNote]!, [ControllerNote]!, [ExpanderFirmware]); strip nulls so per-element serializers can be null-blind. Don't "simplify" to `arr ?? []` — runtime nulls would crash with "Cannot read properties of null".
@@ -133,11 +135,15 @@ export function serializeController(controller: Controller): Record<string, unkn
     // hibernateStatus: Boolean (nullable) — null on older firmware; optional-chain the settings parent.
     // Do NOT coerce null to false: null means "unknown / not applicable", false means "not hibernated".
     hibernate_status: controller.settings?.hibernateStatus ?? null,
-    // ControllerStatus is non-null per schema; no optional chaining needed on the status parent.
-    status_summary: controller.status.summary,
-    status_icon: controller.status.icon,
-    // Unit: assumed gallons for US accounts (probed on US dev account: value=100). Metric accounts may return liters.
-    accumulated_water_savings_gallons: controller.status.accumulatedWaterSavings,
+    // ControllerStatus is declared non-null in the schema, but the project has observed !-fields return
+    // null at runtime (e.g. Zone.status.lastRun). Optional-chain to prevent a crash if the API ever
+    // returns null for the status block.
+    status_summary: controller.status?.summary ?? null,
+    status_icon: controller.status?.icon ?? null,
+    // Unit is account-preference-dependent (gallons for US, liters elsewhere). The schema returns a bare
+    // Int without a unit envelope, so we cannot determine the unit at serialization time. The field name
+    // intentionally omits a unit suffix; it is whitelisted in IDENTIFIER_WHITELIST.
+    accumulated_water_savings: controller.status?.accumulatedWaterSavings ?? null,
     master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
     expanders: nonNull(controller.expanders).map(serializeExpander),
     modules: nonNull(controller.hardware?.modules).map(serializeModule),
