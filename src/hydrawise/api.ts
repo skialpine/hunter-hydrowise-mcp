@@ -59,12 +59,15 @@ import {
   UPDATE_ZONE_ADVANCED_MUTATION,
   UPDATE_ZONE_NOTE_MUTATION,
   WAKE_CONTROLLER_MUTATION,
+  CONTROLLER_SCHEDULE_QUERY,
   WATERING_REPORT_QUERY,
   WATERING_TRIGGERS_QUERY,
   ZONE_FULL_QUERY,
+  ZONE_NEXT_RUN_QUERY,
   ZONE_NOTES_QUERY,
   ZONE_PAST_RUNS_QUERY,
   ZONE_QUERY,
+  ZONE_RUNS_BETWEEN_QUERY,
   ZONE_RUN_SUMMARY_ANNUAL_QUERY,
   ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY,
   ZONE_RUN_SUMMARY_MONTHLY_QUERY,
@@ -80,6 +83,7 @@ import {
   type MasterValveRead,
   type PastZoneRuns,
   type ProgramListEntry,
+  type ScheduledZoneRun,
   type ProgramStartTimeRead,
   type ProgramStartTimeWritable,
   type RunEventType,
@@ -579,6 +583,48 @@ export class HydrawiseApi {
       throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
     }
     return data.zone.pastRuns ?? { lastRun: null, runs: null };
+  }
+
+  async getZoneRunsBetween(zoneId: number, from: number, until: number): Promise<ScheduledZoneRun[]> {
+    const data = await this.client.query<{ zone: { runsBetween: ScheduledZoneRun[] } | null }>(
+      ZONE_RUNS_BETWEEN_QUERY,
+      { zoneId, from, until },
+    );
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return data.zone.runsBetween ?? [];
+  }
+
+  async getZoneNextRun(zoneId: number): Promise<ScheduledZoneRun | null> {
+    const data = await this.client.query<{
+      zone: { scheduledRuns: { nextRun: ScheduledZoneRun | null } } | null;
+    }>(ZONE_NEXT_RUN_QUERY, { zoneId });
+    if (!data.zone) {
+      throw new HydrawiseNotFoundError(`zone ${zoneId} not found`);
+    }
+    return data.zone.scheduledRuns.nextRun;
+  }
+
+  async getControllerSchedule(
+    controllerId: number,
+    from: number,
+    until: number,
+  ): Promise<{ zoneId: number; zoneName: string; zoneNumber: number; runs: ScheduledZoneRun[] }[]> {
+    const data = await this.client.query<{
+      controller: {
+        zones: { id: number; name: string; number: { value: number }; runsBetween: ScheduledZoneRun[] }[] | null;
+      } | null;
+    }>(CONTROLLER_SCHEDULE_QUERY, { controllerId, from, until });
+    if (!data.controller) {
+      throw new HydrawiseNotFoundError(`controller ${controllerId} not found`);
+    }
+    return (data.controller.zones ?? []).map((z) => ({
+      zoneId: z.id,
+      zoneName: z.name,
+      zoneNumber: z.number.value,
+      runs: z.runsBetween ?? [],
+    }));
   }
 
   async getZoneRunSummary(zoneId: number, args: RunSummaryArgs): Promise<RunSummaryDetails | null> {

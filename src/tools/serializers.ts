@@ -356,6 +356,19 @@ export function serializeScheduledZoneRun(
   };
 }
 
+export function serializeUpcomingRun(r: ScheduledZoneRun): Record<string, unknown> {
+  return {
+    id: r.id,
+    start_time: r.startTime.value,
+    end_time: r.endTime.value,
+    normal_duration_minutes: r.normalDuration,
+    // duration is the SCHEDULED minutes the controller is told to run (matches serializeScheduledZoneRun's scheduled_duration_minutes)
+    scheduled_duration_minutes: r.duration,
+    remaining_time_seconds: r.remainingTime,
+    status: r.status.label ?? null,
+  };
+}
+
 function computeElapsedSeconds(start: string, end: string): number | null {
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();

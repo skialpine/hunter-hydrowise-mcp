@@ -1624,6 +1624,51 @@ export const ZONE_PAST_RUNS_QUERY = /* GraphQL */ `
   }
 `;
 
+export interface ScheduledZoneRuns {
+  nextRun: ScheduledZoneRun | null;
+  currentRun: ScheduledZoneRun | null;
+  runs: ScheduledZoneRun[];
+  status: string | null;
+  summary: string;
+}
+
+export const ZONE_RUNS_BETWEEN_QUERY = /* GraphQL */ `
+  query ZoneRunsBetween($zoneId: Int!, $from: Int!, $until: Int!) {
+    zone(zoneId: $zoneId) {
+      runsBetween(from: $from, until: $until) {
+        ${SCHEDULED_ZONE_RUN_FIELDS}
+      }
+    }
+  }
+`;
+
+export const ZONE_NEXT_RUN_QUERY = /* GraphQL */ `
+  query ZoneNextRun($zoneId: Int!) {
+    zone(zoneId: $zoneId) {
+      scheduledRuns {
+        nextRun {
+          ${SCHEDULED_ZONE_RUN_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const CONTROLLER_SCHEDULE_QUERY = /* GraphQL */ `
+  query ControllerSchedule($controllerId: Int!, $from: Int!, $until: Int!) {
+    controller(controllerId: $controllerId) {
+      zones {
+        id
+        name
+        number { value }
+        runsBetween(from: $from, until: $until) {
+          ${SCHEDULED_ZONE_RUN_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
 export const ZONE_RUN_SUMMARY_CURRENT_WEEK_QUERY = /* GraphQL */ `
   query ZoneRunSummaryCurrentWeek($zoneId: Int!) {
     zone(zoneId: $zoneId) {
