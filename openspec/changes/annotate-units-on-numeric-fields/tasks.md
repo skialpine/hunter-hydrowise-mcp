@@ -1,7 +1,8 @@
 ## 1. Verify ambiguous units before committing the rename
 
 - [x] 1.1 Probe `interZoneDelay` on the live Heller Tufts controller: set to a known value (e.g. `120`) via the Hydrawise GUI, run `dump_controller_snapshot`, observe whether the captured value is `120` (seconds) or `2` (minutes if upstream stores minutes). Record the result. **→ VERIFIED seconds** (GUI "Edit Valve Delays" screenshot, 2026-05-09)
-- [ ] 1.2 Probe `MasterValve.delay` and `MasterValve.postTimer` similarly. Record both units. **`delay` → VERIFIED seconds** (same screenshot); **`postTimer` → PENDING** (field not shown in "Edit Valve Delays" GUI; may require a controller with post-timer configured)
+- [x] 1.2a Probe `MasterValve.delay`. **→ VERIFIED seconds** (GUI "Edit Valve Delays" screenshot, 2026-05-09)
+- [ ] 1.2b Probe `MasterValve.postTimer`. **→ PENDING** — field not shown in "Edit Valve Delays" screenshot; may require a controller with post-timer configured or a different GUI path.
 - [x] 1.3 Probe `Sensor.delay` and `Sensor.offTimer` against the existing rain sensor. Record both units. **→ VERIFIED seconds** (GUI "Add Custom Sensor Type" shows seconds-default dropdown + helper text "Minimum number of seconds", 2026-05-09)
 - [ ] 1.4 Probe `StandardProgram.interval` (set "every 3 days" in GUI, observe the snapshot value). Confirm the unit is days.
 - [ ] 1.5 Probe `fixedWateringFrequency` and `virtualSolarSyncWateringFrequency` defaults — set known values via GUI and observe. (`smartWateringFrequency` default `86400` is already high-confidence seconds; no probe needed.)
