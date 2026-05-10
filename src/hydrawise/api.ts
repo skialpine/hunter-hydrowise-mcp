@@ -1352,11 +1352,11 @@ function standardProgramToVars(
   const vars: Record<string, unknown> = {
     controllerId: p.controller_id,
     name: p.name,
-    programType: p.program_type,
+    programType: p.scheduling_method,
     dayPattern: p.day_pattern,
     standardProgramDayPattern: p.standard_program_day_pattern,
-    interval: p.interval_days,
-    seriesStart: p.series_start_epoch_seconds,
+    interval: p.interval_days ?? null,
+    seriesStart: p.series_start_epoch_seconds ?? null,
     startTimes: p.start_times,
     zoneRunTimes: p.zone_run_times.map((z) => ({
       zoneNumber: z.zone_number,
@@ -1365,8 +1365,8 @@ function standardProgramToVars(
     })),
     scheduleAdjustmentIds: p.schedule_adjustment_ids,
     seasonalAdjustmentFactors: p.seasonal_adjustment_factor_percents,
-    validFrom: p.valid_from_epoch_seconds,
-    validTo: p.valid_to_epoch_seconds,
+    validFrom: p.valid_from_epoch_seconds ?? null,
+    validTo: p.valid_to_epoch_seconds ?? null,
     ignoreRainSensor: p.ignore_rain_sensor,
   };
   if (isUpdate && p.program_id !== undefined) vars.programId = p.program_id;

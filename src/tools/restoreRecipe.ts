@@ -453,10 +453,9 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         program_id: sp.id,
         controller_id: controllerId,
         name: sp.name,
-        // The mutation expects program_type as Int (the type-id, not the discriminator
-        // string); the snapshot's "Standard" discriminator doesn't map here. Pass null
-        // — the AI must resolve from get_program before applying. Captured in notes.
-        program_type: null,
+        // scheduling_method is an opaque Int not exposed on read (only visible via get_program).
+        // Pass null — the AI must resolve from get_program before applying. Captured in notes.
+        scheduling_method: null,
         day_pattern: sp.day_pattern,
         standard_program_day_pattern: sp.standard_program_day_pattern,
         interval_days: sp.periodicity?.period ?? null,
@@ -474,7 +473,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         ignore_rain_sensor: null,
       },
       [],
-      'REQUIRED MERGE BEFORE APPLY: program_type, run_duration (every zone), and ignore_rain_sensor arrive null here — the read schema does not expose them. day_pattern is now populated from the snapshot for dow-mode programs and can be used as-is. Call get_program(controller_id, program_id, "Standard") first, merge all non-null snapshot values over the live values, then apply. Skipping the merge and replaying null run_duration values verbatim will silently zero out every zone\'s run time.',
+      'REQUIRED MERGE BEFORE APPLY: scheduling_method, run_duration (every zone), and ignore_rain_sensor arrive null here — the read schema does not expose them. day_pattern is now populated from the snapshot for dow-mode programs and can be used as-is. Call get_program(controller_id, program_id, "Standard") first, merge all non-null snapshot values over the live values, then apply. Skipping the merge and replaying null run_duration values verbatim will silently zero out every zone\'s run time.',
     );
     programStepOrders.push(order);
   }

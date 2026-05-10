@@ -167,7 +167,12 @@ const ZoneRunTimeShape = z.object({
 const StandardProgramBaseShape = {
   controller_id: z.number().int(),
   name: z.string(),
-  program_type: z.number().int(),
+  scheduling_method: z
+    .number()
+    .int()
+    .describe(
+      'Hydrawise scheduling-method int (e.g. 3 = Standard); matches the scheduling_method field returned by get_program.',
+    ),
   day_pattern: z
     .string()
     .describe(
@@ -180,14 +185,38 @@ const StandardProgramBaseShape = {
         'standard_program_day_pattern is not "dow".',
     ),
   standard_program_day_pattern: z.string().nullable(),
-  interval_days: z.number().int().nullable().describe('Repeat interval for interval-based programs, in days (StandardProgram periodicity.period Int).'),
-  series_start_epoch_seconds: z.number().int().nullable().describe('Series start date as Unix timestamp, in seconds (StandardProgram periodicity.seriesStart.timestamp Int).'),
+  interval_days: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe(
+      'Repeat interval in days (StandardProgram periodicity.period Int). Required when standard_program_day_pattern == "interval"; ignored otherwise.',
+    ),
+  series_start_epoch_seconds: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe(
+      'Series start date as Unix timestamp in seconds (StandardProgram periodicity.seriesStart.timestamp Int). Only meaningful in "interval" mode.',
+    ),
   start_times: z.array(z.string()),
   zone_run_times: z.array(ZoneRunTimeShape),
   schedule_adjustment_ids: z.array(z.number().int()),
   seasonal_adjustment_factor_percents: z.array(z.number().int()).describe('12 monthly watering adjustment factors Jan–Dec, in percent (updateStandardProgram.seasonalAdjustmentFactors [Int]).'),
-  valid_from_epoch_seconds: z.number().int().nullable().describe('Program valid-from date as Unix timestamp, in seconds (StandardProgram timeRange.validFrom Int).'),
-  valid_to_epoch_seconds: z.number().int().nullable().describe('Program valid-to date as Unix timestamp, in seconds (StandardProgram timeRange.validTo Int).'),
+  valid_from_epoch_seconds: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe('Program valid-from date as Unix timestamp in seconds; null means no start bound.'),
+  valid_to_epoch_seconds: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe('Program valid-to date as Unix timestamp in seconds; null means no end bound.'),
   ignore_rain_sensor: z.boolean().nullable(),
 };
 
@@ -272,6 +301,8 @@ export function registerSchedulingTools(
         'Return full detail for a single program. Dispatches on program_type. ' +
         'For Standard: start times, day pattern, days run, monthly adjustments, periodicity, ' +
         'valid_from/to, and per-zone run-time groups (the "for X minutes" you see in the GUI). ' +
+        'Returns periodicity: null when standard_program_day_pattern is "dow", "odd", or "even" — ' +
+        'periodicity is only meaningful in "interval" mode. ' +
         'For Advanced: scope, zone_specific, advanced_program_id, watering_frequency ' +
         '(label/description/period), run_time_group reference, and applies_to_zones. ' +
         'Note that Advanced programs do NOT carry start times here — those live per-zone via ' +

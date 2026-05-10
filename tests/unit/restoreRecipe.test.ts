@@ -276,7 +276,7 @@ describe('buildRestoreRecipe — programs and zones', () => {
       start_times: ['06:00', '18:00'],
       schedule_adjustment_ids: [17],
     });
-    // notes flag the remaining gaps (program_type, run_duration, ignore_rain_sensor).
+    // notes flag the remaining gaps (scheduling_method, run_duration, ignore_rain_sensor).
     expect(progStep?.notes).toBeDefined();
   });
 

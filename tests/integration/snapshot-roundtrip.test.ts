@@ -423,11 +423,11 @@ describe('StandardProgram.dayPattern round-trip', () => {
     expect(progStep!.args.day_pattern).toBe('0001001');
     expect(progStep!.args.standard_program_day_pattern).toBe('dow');
 
-    // The recipe step args need program_type merged from live state (documented null in recipe).
+    // The recipe step args need scheduling_method merged from live state (documented null in recipe).
     // Supply it here as the restore skill would — simulates the real merge workflow.
     const previewResp = await callTool(app, sid, 'update_standard_program', {
       ...progStep!.args,
-      program_type: 1, // merged from get_program — recipe notes document this requirement
+      scheduling_method: 1, // merged from get_program — recipe notes document this requirement
       preview: true,
     });
     expect(

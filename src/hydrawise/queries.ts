@@ -475,17 +475,17 @@ export interface StandardProgramWritable {
   program_id?: number;
   controller_id: number;
   name: string;
-  program_type: number;
+  scheduling_method: number;
   day_pattern: string;
   standard_program_day_pattern: string | null;
-  interval_days: number | null;
-  series_start_epoch_seconds: number | null;
+  interval_days?: number | null;
+  series_start_epoch_seconds?: number | null;
   start_times: string[];
   zone_run_times: { zone_number: number; run_time_group_id?: number | null; run_duration?: number | null }[];
   schedule_adjustment_ids: number[];
   seasonal_adjustment_factor_percents: number[];
-  valid_from_epoch_seconds: number | null;
-  valid_to_epoch_seconds: number | null;
+  valid_from_epoch_seconds?: number | null;
+  valid_to_epoch_seconds?: number | null;
   ignore_rain_sensor: boolean | null;
 }
 
@@ -845,7 +845,6 @@ export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
           ignoreRainSensor
           daysRun
           standardProgramDayPattern
-          dayPattern
           periodicity {
             period
             seriesStart {
@@ -923,9 +922,8 @@ export interface StandardProgramRead {
   ignoreRainSensor: boolean;
   daysRun: string[];
   standardProgramDayPattern: string | null;
-  // 7-char bitmap "SMTWTFS" — '1' = run, '0' = skip, position 0 = Sunday.
-  // Only populated when standardProgramDayPattern = "dow"; null for even/odd/interval modes.
-  dayPattern: string | null;
+  // dayPattern is a mutation INPUT only — not queryable on StandardProgram reads.
+  // The 7-char bitmap is derived from daysRun in serializeStandardProgram.
   periodicity: { period: number; seriesStart: { timestamp: number } | null } | null;
   // The schema's `timeRange: Unit!` is non-null at the wrapper; only the inner validFrom/validTo are nullable (null = unbounded on that side). Keep the wrapper non-null to match.
   timeRange: { validFrom: number | null; validTo: number | null };

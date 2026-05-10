@@ -493,6 +493,16 @@ export function serializeSensorZoneRefsForZone(
     .map((s) => ({ id: s.id, name: s.name }));
 }
 
+/** Convert an array of day-name strings to the 7-character Sunday-first bitmap used
+ *  by the Hydrawise `dayPattern` mutation input.
+ *  e.g. ['WEDNESDAY', 'SATURDAY'] → '0001001'
+ */
+function daysRunToBitmap(daysRun: string[]): string {
+  const ORDER = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
+  const set = new Set(daysRun.map((d) => d.toUpperCase()));
+  return ORDER.map((d) => (set.has(d) ? '1' : '0')).join('');
+}
+
 export function serializeStandardProgram(p: import('../hydrawise/queries.js').StandardProgramRead): Record<string, unknown> {
   return {
     id: p.id,
@@ -500,8 +510,9 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     program_type: 'Standard',
     standard_program_day_pattern: p.standardProgramDayPattern,
     // 7-char bitmap "SMTWTFS": '1' = run, '0' = skip, position 0 = Sunday.
-    // Non-null only when standard_program_day_pattern = "dow".
-    day_pattern: p.dayPattern,
+    // dayPattern is a mutation INPUT only — not queryable on StandardProgram reads.
+    // Derived from daysRun when standard_program_day_pattern = "dow"; null otherwise.
+    day_pattern: p.standardProgramDayPattern === 'dow' ? daysRunToBitmap(p.daysRun) : null,
     days_run: p.daysRun,
     start_times: p.startTimes,
     ignore_rain_sensor: p.ignoreRainSensor,
