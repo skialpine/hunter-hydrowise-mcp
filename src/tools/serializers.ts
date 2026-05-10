@@ -328,16 +328,10 @@ export function serializeRunSummaryDetails(
 }
 
 export function serializeProgramStartTime(p: ProgramStartTimeRead): Record<string, unknown> {
-  const time = p.time;
-  let timeString: string | null = null;
-  if (typeof time === 'string') timeString = time;
-  else if (time && 'value' in time) timeString = time.value;
-  else if (time && 'hour' in time)
-    timeString = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
   return {
     id: p.id,
     type_value: p.type?.value ?? null,
-    time: timeString,
+    time: p.time,
     watering_days: p.wateringDays ?? null,
     apply_all: p.application?.all ?? null,
     zone_ids: (p.application?.zones ?? []).map((z) => z.id),

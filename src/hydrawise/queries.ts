@@ -604,11 +604,10 @@ export interface WateringTriggersRead {
 export interface ProgramStartTimeRead {
   id: number;
   type: { value: number; label?: string | null } | null;
-  // Time is a custom scalar — the API returns a bare time string (e.g. "08:30").
-  // The legacy object branches ({ value } / { hour, minute }) are unreachable via
-  // the current query but kept as a defensive union in case a future query variant
-  // returns a structured shape; the serializer handles all three.
-  time: string | { value: string } | { hour: number; minute: number } | null;
+  // Time is scalar Time — graphql-request deserializes it as a plain string (e.g. "08:30").
+  // null is retained defensively despite the upstream Time! non-null declaration
+  // (Hydrawise violates ! on partial errors per CLAUDE.md gotchas).
+  time: string | null;
   // EVEN | ODD | DAYS | MONDAY..SUNDAY
   wateringDays: string[] | null;
   application: {
