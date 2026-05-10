@@ -58,3 +58,10 @@ The response SHALL include `total_normal_run_time_minutes`, `total_actual_run_ti
 #### Scenario: Zone has no run data for the period
 - **WHEN** an MCP client calls `get_run_summary` for a zone with no runs in the requested period
 - **THEN** the response contains zero values for all totals (not an error)
+
+### Requirement: get_water_saving_summary tool is part of the reporting capability
+The `get_water_saving_summary` tool SHALL be registered and documented as part of the irrigation-reporting capability (alongside `get_watering_report`, `get_zone_run_history`, `get_run_summary`). It is read-only.
+
+#### Scenario: Tool is accessible via MCP
+- **WHEN** an MCP client lists tools
+- **THEN** `get_water_saving_summary` appears in the tool list alongside the other reporting tools
