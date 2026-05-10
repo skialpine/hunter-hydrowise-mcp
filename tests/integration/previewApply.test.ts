@@ -99,7 +99,7 @@ describe('preview/apply contract', () => {
     });
     const resp = await callTool(app, 'update_seasonal_adjustments', {
       controller_id: 7,
-      factors: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      monthly_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
       preview: true,
     });
     expect(resp.result?.isError).toBeFalsy();
@@ -107,12 +107,12 @@ describe('preview/apply contract', () => {
     const payload = JSON.parse(resp.result!.content[0]!.text) as {
       preview: boolean;
       operation: string;
-      variables: { controller_id: number; factors: number[] };
+      variables: { controller_id: number; monthly_adjustment_percents: number[] };
     };
     expect(payload.preview).toBe(true);
     expect(payload.operation).toBe('updateSeasonalAdjustments');
     expect(payload.variables.controller_id).toBe(7);
-    expect(payload.variables.factors).toHaveLength(12);
+    expect(payload.variables.monthly_adjustment_percents).toHaveLength(12);
   });
 
   it('preview=false invokes the API and reports the result', async () => {
@@ -125,7 +125,7 @@ describe('preview/apply contract', () => {
     });
     const resp = await callTool(app, 'update_seasonal_adjustments', {
       controller_id: 7,
-      factors: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      monthly_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
       preview: false,
     });
     expect(resp.result?.isError).toBeFalsy();
@@ -150,7 +150,7 @@ describe('preview/apply contract', () => {
     });
     await callTool(app, 'update_seasonal_adjustments', {
       controller_id: 7,
-      factors: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      monthly_adjustment_percents: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
     });
     expect(called).toBe(true);
   });
@@ -310,7 +310,7 @@ describe('preview/apply contract', () => {
       watering_mode: 1,
       global_master_valve: 1,
       schedule_adjustment_ids: [],
-      watering_adjustment: 100,
+      watering_adjustment_percent: 100,
       watering_type: 1,
       watering_frequency_mode: 1,
       preview: true,

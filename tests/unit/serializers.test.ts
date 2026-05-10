@@ -55,8 +55,8 @@ describe('serializeZoneSettings', () => {
   it('emits cycle_soak_enable as boolean true when cycleAndSoakSettings is present', () => {
     const out = serializeZoneSettings(baseZone);
     expect(out.cycle_soak_enable).toBe(true);
-    expect(out.cycle_custom_time).toBe(10);
-    expect(out.soak_custom_time).toBe(30);
+    expect(out.cycle_custom_time_minutes).toBe(10);
+    expect(out.soak_custom_time_minutes).toBe(30);
   });
 
   it('emits cycle_soak_enable as false when cycleAndSoakSettings is null', () => {
@@ -262,9 +262,9 @@ describe('serializeWateringTriggers (units)', () => {
     expect(out.suspend_water_rain).toEqual({ value: 0.2, unit: 'in' });
     expect(out.suspend_water_week_rain).toEqual({ value: 1.2, unit: 'in' });
     // Plain Int fields stay as bare numbers (no unit on the schema side).
-    expect(out.extend_water_humidity).toBe(100);
-    expect(out.suspend_probability_of_precipitation).toBe(70);
-    expect(out.reduce_water_temperature_percentage).toBe(30);
+    expect(out.extend_water_humidity_percent).toBe(100);
+    expect(out.suspend_probability_of_precipitation_percent).toBe(70);
+    expect(out.reduce_water_temperature_percent).toBe(30);
   });
 });
 
@@ -281,7 +281,7 @@ describe('serializeStandardProgram', () => {
       ignoreRainSensor: false,
       daysRun: ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
       standardProgramDayPattern: 'interval',
-      periodicity: { period: 2, seriesStart: { value: 'Thu, 26 Jun 25 00:00:00 -0600' } },
+      periodicity: { period: 2, seriesStart: { timestamp: 1750914000 } },
       timeRange: { validFrom: null, validTo: null },
       conditionalWateringAdjustments: [{ id: 17, label: 'Vacation' }],
       applications: [
@@ -297,9 +297,9 @@ describe('serializeStandardProgram', () => {
     expect(out.program_type).toBe('Standard');
     expect(out.start_times).toEqual(['22:00']);
     expect(out.days_run).toHaveLength(7);
-    expect(out.periodicity).toEqual({ period: 2, series_start: 'Thu, 26 Jun 25 00:00:00 -0600' });
-    expect(out.valid_from).toBeNull();
-    expect(out.valid_to).toBeNull();
+    expect(out.periodicity).toEqual({ period: 2, series_start_epoch_seconds: 1750914000 });
+    expect(out.valid_from_epoch_seconds).toBeNull();
+    expect(out.valid_to_epoch_seconds).toBeNull();
     expect(out.schedule_adjustment_ids).toEqual([17]);
     expect(out.per_zone_run_times).toEqual([
       { zone_id: 100, zone_number: 1, run_time_group_id: 200, run_time_group_name: null, duration_minutes: 10 },
@@ -353,8 +353,8 @@ describe('serializeSensor', () => {
       divisor: null,
       flow_rate: null,
       off_level: null,
-      off_timer: null,
-      delay: 0,
+      off_timer_seconds: null,
+      delay_seconds: 0,
       active: true,
       input_label: 'SEN-1',
       type_label: 'Hunter Clik',
@@ -398,8 +398,8 @@ describe('serializeSensorModel', () => {
       sensor_type: 'LEVEL_CLOSED',
       mode_type: 'STOP',
       category: { id: 1, name: 'Hunter Clik' },
-      delay: 0,
-      off_timer: null,
+      delay_seconds: 0,
+      off_timer_seconds: null,
       off_level: null,
       divisor: null,
       flow_rate: null,

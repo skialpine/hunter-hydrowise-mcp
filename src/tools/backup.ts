@@ -25,20 +25,21 @@ import {
 } from './restoreRecipe.js';
 import { jsonResult, runTool } from './_helpers.js';
 
-// Snapshot version bumped to 5 with embedded restore choreography: top-level
-// _restore_recipe (ordered list of {tool, args, depends_on, notes} steps that an AI
-// follows to apply the snapshot to a controller) and _caveats (string warnings about
-// known restore limitations: unreadable fields, custom-type id reallocation,
-// reusable schedule references, hardware re-wiring, unit-pref drift). The recipe is
-// computed at snapshot time as a pure function of the captured data — no live API
-// calls, no I/O — so the snapshot file is self-sufficient.
+// Snapshot version bumped to 6 with unit-suffix naming convention applied to all
+// fixed-unit numeric fields. Every numeric field whose unit is fixed now carries the
+// unit as a name suffix (e.g. cycle_custom_time_minutes, inter_zone_delay_seconds,
+// interval_days). The _restore_recipe args use the same suffixed names so the recipe
+// is self-consistent. v5-and-earlier snapshots remain readable for inspection but
+// their _restore_recipe args use the old un-suffixed names and CANNOT be replayed by
+// this server version — use the server version that captured the snapshot for replay.
 //
 // Version history (informational; no migration logic — older snapshots are still readable):
 //   v2: STANDARD-mode complete + watering triggers + zone settings, no sensors, no Advanced
 //   v3: + controller.sensors[] + per-zone sensors[] cross-references
 //   v4: + controller.advanced_programs[] + per-zone advanced_program reference
-//   v5: + _restore_recipe[] + _caveats[] at the envelope top level (this version)
-export const SNAPSHOT_VERSION = 5;
+//   v5: + _restore_recipe[] + _caveats[] at the envelope top level
+//   v6: + unit-suffix renaming convention applied across all fixed-unit numeric fields (this version)
+export const SNAPSHOT_VERSION = 6;
 const PACKAGE_VERSION = '0.3.0';
 
 // The runtime `snapshot_version` field is the version contract — the type alias is NOT.
@@ -51,7 +52,7 @@ const PACKAGE_VERSION = '0.3.0';
 // `_restore_recipe` is always emitted (empty array on a controller with nothing to restore),
 // keeping the shape stable for AI consumers that don't want to special-case empty controllers.
 // `_caveats` is similarly always emitted (empty array if no warnings apply).
-export interface ControllerSnapshotV5 {
+export interface ControllerSnapshotV6 {
   snapshot_version: typeof SNAPSHOT_VERSION;
   captured_at: string;
   server_version: string;
@@ -59,7 +60,7 @@ export interface ControllerSnapshotV5 {
   controller: Record<string, unknown> & {
     zones: Array<Record<string, unknown>>;
     programs: Array<Record<string, unknown>>;
-    seasonal_adjustments: { factors: number[] };
+    seasonal_adjustments: { monthly_adjustment_percents: number[] };
     watering_triggers: Record<string, unknown> | null;
     sensors: Array<Record<string, unknown>>;
     advanced_programs: Array<Record<string, unknown>>;
@@ -125,7 +126,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
     'dump_controller_snapshot',
     {
       description:
-        'Snapshot one controller as a versioned JSON document (snapshot_version: 5). Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, per-zone advanced_program reference for ADVANCED-mode zones, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (BOTH Standard AND Advanced are now inlined with full subtype-specific detail), program start times per zone, seasonal adjustments, watering triggers (with units captured), sensors (controller.sensors[] with full detail; per-zone sensors[] denormalised cross-references), and advanced_programs (empty on STANDARD-mode, populated on ADVANCED with inlined AdvancedProgram details). The envelope additionally embeds `_restore_recipe` (an ordered list of {order, tool, args, depends_on, notes} restore steps the AI follows to apply this snapshot — preview each step, confirm with user, then execute) and `_caveats` (string warnings about known restore limitations: unreadable fields, custom-type id reallocation, reusable schedule references, hardware re-wiring, unit-pref drift). Use the .claude/skills/restore-irrigation-backup skill to orchestrate the restore. Read-only; no mutations.',
+        'Snapshot one controller as a versioned JSON document (snapshot_version: 6). Captures: user, controller header (id, device_id, model, hardware, location, timezone, master valve, expanders, modules, run-time-group catalog, controller notes), zones with their writable settings (cycle/soak, monitoring observed values with units, master-valve override, zone notes, sensor cross-references, per-zone advanced_program reference for ADVANCED-mode zones, plus a _unreadable_fields array listing writable-but-not-readable field names), programs (BOTH Standard AND Advanced are now inlined with full subtype-specific detail), program start times per zone, seasonal adjustments, watering triggers (with units captured), sensors (controller.sensors[] with full detail; per-zone sensors[] denormalised cross-references), and advanced_programs (empty on STANDARD-mode, populated on ADVANCED with inlined AdvancedProgram details). The envelope additionally embeds `_restore_recipe` (an ordered list of {order, tool, args, depends_on, notes} restore steps the AI follows to apply this snapshot — preview each step, confirm with user, then execute) and `_caveats` (string warnings about known restore limitations: unreadable fields, custom-type id reallocation, reusable schedule references, hardware re-wiring, unit-pref drift). Use the .claude/skills/restore-irrigation-backup skill to orchestrate the restore. Read-only; no mutations.',
       inputSchema: Input,
     },
     async ({ controller_id }) =>
@@ -258,7 +259,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             };
           });
 
-          const baseEnvelope: Omit<ControllerSnapshotV5, '_restore_recipe' | '_caveats'> = {
+          const baseEnvelope: Omit<ControllerSnapshotV6, '_restore_recipe' | '_caveats'> = {
             snapshot_version: SNAPSHOT_VERSION,
             captured_at: new Date().toISOString(),
             server_version: PACKAGE_VERSION,
@@ -268,7 +269,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
               controller_notes: controllerNotes.map(serializeNote),
               zones: enrichedZones,
               programs: inlinedPrograms as unknown as Array<Record<string, unknown>>,
-              seasonal_adjustments: { factors: seasonalAdjustments },
+              seasonal_adjustments: { monthly_adjustment_percents: seasonalAdjustments },
               watering_triggers: wateringTriggers ? serializeWateringTriggers(wateringTriggers) : null,
               sensors: controllerSensors.map(serializeSensor),
               // Empty array on STANDARD-mode controllers (no Advanced programs); populated
@@ -290,7 +291,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
           const recipe = buildRestoreRecipe(baseEnvelope as unknown as SnapshotForRecipe);
           const caveats = buildRestoreCaveats(baseEnvelope as unknown as SnapshotForRecipe);
 
-          const snapshot: ControllerSnapshotV5 = {
+          const snapshot: ControllerSnapshotV6 = {
             ...baseEnvelope,
             _restore_recipe: recipe,
             _caveats: caveats,

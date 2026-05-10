@@ -34,27 +34,27 @@ const ZoneWritableShape = {
   watering_mode: z.number().int(),
   global_master_valve: z.number().int(),
   schedule_adjustment_ids: z.array(z.number().int()),
-  watering_adjustment: z.number().int(),
+  watering_adjustment_percent: z.number().int().describe('Zone-level watering adjustment, in percent (updateZoneAdvanced.wateringAdjustment Int).'),
   watering_type: z.number().int(),
   watering_frequency_mode: z.number().int(),
   icon: z.number().int().nullable().optional(),
-  run_time: z.number().int().nullable().optional(),
-  fixed_watering_frequency: z.number().int().nullable().optional(),
-  smart_watering_frequency: z.number().int().nullable().optional(),
-  virtual_solar_sync_watering_frequency: z.number().int().nullable().optional(),
+  run_time_minutes: z.number().int().nullable().optional().describe('Per-zone run-time override, in minutes (updateZoneAdvanced.runTime Int).'),
+  fixed_watering_frequency_minutes: z.number().int().nullable().optional().describe('Fixed-program repeat interval, in minutes (updateZoneAdvanced.fixedWateringFrequency Int).'),
+  smart_watering_frequency_seconds: z.number().int().nullable().optional().describe('Smart-program repeat interval, in seconds (updateZoneAdvanced.smartWateringFrequency Int; default 86400 = 24 h).'),
+  virtual_solar_sync_watering_frequency_minutes: z.number().int().nullable().optional().describe('Virtual Solar Sync repeat interval, in minutes (updateZoneAdvanced.virtualSolarSyncWateringFrequency Int).'),
   run_next_available_start_time: z.boolean().nullable().optional(),
   pre_configured_watering_schedule_id: z.number().int().nullable().optional(),
   cycle_soak_enable: z.boolean().nullable().optional(),
-  cycle_custom_time: z.number().int().nullable().optional(),
-  soak_custom_time: z.number().int().nullable().optional(),
-  factors: z.array(z.number().int()).nullable().optional(),
+  cycle_custom_time_minutes: z.number().int().nullable().optional().describe('Cycle duration for cycle-and-soak, in minutes (CycleAndSoakSettings.cycleDuration Int).'),
+  soak_custom_time_minutes: z.number().int().nullable().optional().describe('Soak duration for cycle-and-soak, in minutes (CycleAndSoakSettings.soakDuration Int).'),
+  monthly_adjustment_percents: z.array(z.number().int()).nullable().optional().describe('12 monthly watering adjustment factors Jan–Dec, in percent (updateZoneAdvanced.factors [Int]).'),
   sensor_ids: z.array(z.number().int()).nullable().optional(),
   reusable_schedule: z.boolean().nullable().optional(),
   reusable_schedule_name: z.string().nullable().optional(),
   flow_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
-  flow_monitoring_value: z.number().nullable().optional(),
-  current_monitoring_value: z.number().int().nullable().optional(),
+  flow_monitoring_value: z.number().nullable().optional().describe('Flow monitoring baseline, in account-preferred units (updateZoneAdvanced.flowMonitoringValue Float).'),
+  current_monitoring_value: z.number().int().nullable().optional().describe('Current monitoring baseline, in account-preferred units (updateZoneAdvanced.currentMonitoringValue Int).'),
   preview: z.boolean().optional(),
 };
 
@@ -63,8 +63,8 @@ const SetBaselineInput = {
   zone_id: z.number().int(),
   flow_monitoring_method: MonitoringMethodEnum,
   current_monitoring_method: MonitoringMethodEnum,
-  flow_monitoring_value: z.number().nullable().optional(),
-  current_monitoring_value: z.number().nullable().optional(),
+  flow_monitoring_value: z.number().nullable().optional().describe('Flow monitoring baseline, in account-preferred units (setBaselineValues.flowMonitoringValue Float).'),
+  current_monitoring_value: z.number().nullable().optional().describe('Current monitoring baseline, in account-preferred units (setBaselineValues.currentMonitoringValue Float).'),
   preview: z.boolean().optional(),
 };
 
@@ -72,33 +72,33 @@ const ControllerIdInput = { controller_id: z.number().int() };
 
 const SeasonalAdjustmentsInput = {
   controller_id: z.number().int(),
-  factors: z.array(z.number().int()).length(12, 'factors must have exactly 12 entries'),
+  monthly_adjustment_percents: z.array(z.number().int()).length(12, 'monthly_adjustment_percents must have exactly 12 entries').describe('12 monthly watering adjustment factors Jan–Dec, in percent (updateSeasonalAdjustments.factors [Int]!).'),
   preview: z.boolean().optional(),
 };
 
 const WateringTriggersInput = {
   controller_id: z.number().int(),
-  extend_water_temperature: z.number(),
+  extend_water_temperature: z.number().describe('Temperature threshold to extend watering, in account-preferred units (WateringTriggers.extendWaterTemperature LocalizedValueType).'),
   extend_water_temperature_enabled: z.boolean(),
-  extend_water_temperature_percentage: z.number().int(),
-  extend_water_humidity: z.number().int(),
+  extend_water_temperature_percent: z.number().int().describe('Extra watering when temperature threshold met, in percent (WateringTriggers.extendWaterTemperaturePercentage Int).'),
+  extend_water_humidity_percent: z.number().int().describe('Watering reduction when humidity exceeds threshold, in percent (WateringTriggers.extendWaterHumidity Int).'),
   extend_water_humidity_enabled: z.boolean(),
-  suspend_water_week_rain: z.number(),
-  suspend_water_rain_days: z.number().int(),
+  suspend_water_week_rain: z.number().describe('Weekly rainfall amount to trigger suspension, in account-preferred units (WateringTriggers.suspendWaterWeekRain LocalizedValueType).'),
+  suspend_water_rain_days: z.number().int().describe('Days to suspend watering after rainfall, in days (WateringTriggers.suspendWaterRainDays Int).'),
   suspend_water_week_rain_enabled: z.boolean(),
-  suspend_water_rain: z.number(),
+  suspend_water_rain: z.number().describe('Single-event rainfall amount to trigger suspension, in account-preferred units (WateringTriggers.suspendWaterRain LocalizedValueType).'),
   suspend_water_rain_enabled: z.boolean(),
-  suspend_water_temperature: z.number(),
+  suspend_water_temperature: z.number().describe('Temperature threshold to suspend watering, in account-preferred units (WateringTriggers.suspendWaterTemperature LocalizedValueType).'),
   suspend_water_temperature_enabled: z.boolean(),
-  suspend_probability_of_precipitation: z.number().int(),
+  suspend_probability_of_precipitation_percent: z.number().int().describe('Forecast rain probability threshold to suspend watering, in percent (WateringTriggers.suspendProbabilityOfPrecipitation Int).'),
   suspend_probability_of_precipitation_enabled: z.boolean(),
-  suspend_wind: z.number(),
+  suspend_wind: z.number().describe('Wind speed threshold to suspend watering, in account-preferred units (WateringTriggers.suspendWind LocalizedValueType).'),
   suspend_wind_enabled: z.boolean(),
   enable_evapotranspiration_forecast_temperature: z.boolean(),
   enable_evapotranspiration_forecast_rain: z.boolean(),
   reduce_water_temperature_enabled: z.boolean(),
-  reduce_water_temperature: z.number(),
-  reduce_water_temperature_percentage: z.number().int(),
+  reduce_water_temperature: z.number().describe('Temperature threshold to reduce watering, in account-preferred units (WateringTriggers.reduceWaterTemperature LocalizedValueType).'),
+  reduce_water_temperature_percent: z.number().int().describe('Watering reduction when temperature threshold met, in percent (WateringTriggers.reduceWaterTemperaturePercentage Int).'),
   preview: z.boolean().optional(),
 };
 
@@ -139,7 +139,7 @@ const DeleteProgramStartTimeInput = {
 const ZoneRunTimeShape = z.object({
   zone_number: z.number().int(),
   run_time_group_id: z.number().int().nullable().optional(),
-  run_duration: z.number().int().nullable().optional(),
+  run_duration: z.number().int().nullable().optional().describe('DEFERRED — unit not yet verified on a live controller (likely minutes per GUI; updateStandardProgram.zoneRunTimes.runDuration Int).'),
 });
 
 const StandardProgramBaseShape = {
@@ -148,14 +148,14 @@ const StandardProgramBaseShape = {
   program_type: z.number().int(),
   day_pattern: z.string(),
   standard_program_day_pattern: z.string().nullable(),
-  interval: z.number().int().nullable(),
-  series_start: z.number().int().nullable(),
+  interval_days: z.number().int().nullable().describe('Repeat interval for interval-based programs, in days (StandardProgram periodicity.period Int).'),
+  series_start_epoch_seconds: z.number().int().nullable().describe('Series start date as Unix timestamp, in seconds (StandardProgram periodicity.seriesStart.timestamp Int).'),
   start_times: z.array(z.string()),
   zone_run_times: z.array(ZoneRunTimeShape),
   schedule_adjustment_ids: z.array(z.number().int()),
   seasonal_adjustment_factors: z.array(z.number().int()),
-  valid_from: z.number().int().nullable(),
-  valid_to: z.number().int().nullable(),
+  valid_from_epoch_seconds: z.number().int().nullable().describe('Program valid-from date as Unix timestamp, in seconds (StandardProgram timeRange.validFrom Int).'),
+  valid_to_epoch_seconds: z.number().int().nullable().describe('Program valid-to date as Unix timestamp, in seconds (StandardProgram timeRange.validTo Int).'),
   ignore_rain_sensor: z.boolean().nullable(),
 };
 
@@ -181,15 +181,15 @@ const WateringProgramBaseShape = {
   controller_id: z.number().int(),
   schedule_adjustment_ids: z.array(z.number().int()).nullable(),
   seasonal_adjustment: z.array(z.number().int()).nullable(),
-  fixed_watering_run_time: z.number().int().optional(),
+  fixed_watering_run_time: z.number().int().optional().describe('DEFERRED — unit not yet verified on a live controller (likely minutes; updateTimeBasedWateringProgram.fixedWateringRunTime Int).'),
   fixed_watering_frequency_mode: z.number().int().optional(),
-  fixed_watering_frequency_value: z.number().int().nullable().optional(),
-  watering_program_adjustment: z.number().int().nullable().optional(),
-  smart_watering_run_time: z.number().int().optional(),
-  smart_watering_frequency_value: z.number().int().optional(),
-  virtual_solar_sync_watering_run_time: z.number().int().optional(),
+  fixed_watering_frequency_value: z.number().int().nullable().optional().describe('DEFERRED — unit not yet verified on a live controller (updateTimeBasedWateringProgram.fixedWateringFrequencyValue Int).'),
+  watering_program_adjustment: z.number().int().nullable().optional().describe('DEFERRED — unit not yet verified (updateTimeBasedWateringProgram.wateringProgramAdjustment Int).'),
+  smart_watering_run_time: z.number().int().optional().describe('DEFERRED — unit not yet verified on a live controller (likely minutes; updateSmartBasedWateringProgram.smartWateringRunTime Int).'),
+  smart_watering_frequency_value: z.number().int().optional().describe('DEFERRED — unit not yet verified (updateSmartBasedWateringProgram.smartWateringFrequencyValue Int).'),
+  virtual_solar_sync_watering_run_time: z.number().int().optional().describe('DEFERRED — unit not yet verified on a live controller (likely minutes; updateVirtualSolarSyncWateringProgram.virtualSolarSyncWateringRunTime Int).'),
   virtual_solar_sync_watering_frequency_mode: z.number().int().optional(),
-  virtual_solar_sync_watering_frequency_value: z.number().int().nullable().optional(),
+  virtual_solar_sync_watering_frequency_value: z.number().int().nullable().optional().describe('DEFERRED — unit not yet verified (updateVirtualSolarSyncWateringProgram.virtualSolarSyncWateringFrequencyValue Int).'),
 };
 
 const CreateWateringProgramInput = {
@@ -316,7 +316,7 @@ export function registerSchedulingTools(
     },
     async ({ controller_id }) =>
       wrap('get_seasonal_adjustments', async () =>
-        jsonResult({ factors: await api.getSeasonalAdjustments(controller_id) }),
+        jsonResult({ monthly_adjustment_percents: await api.getSeasonalAdjustments(controller_id) }),
       ),
   );
 
@@ -354,21 +354,21 @@ export function registerSchedulingTools(
           watering_mode: partial.watering_mode,
           global_master_valve: partial.global_master_valve,
           schedule_adjustment_ids: partial.schedule_adjustment_ids,
-          watering_adjustment: partial.watering_adjustment,
+          watering_adjustment_percent: partial.watering_adjustment_percent,
           watering_type: partial.watering_type,
           watering_frequency_mode: partial.watering_frequency_mode,
           icon: partial.icon ?? null,
-          run_time: partial.run_time ?? null,
-          fixed_watering_frequency: partial.fixed_watering_frequency ?? null,
-          smart_watering_frequency: partial.smart_watering_frequency ?? null,
-          virtual_solar_sync_watering_frequency:
-            partial.virtual_solar_sync_watering_frequency ?? null,
+          run_time_minutes: partial.run_time_minutes ?? null,
+          fixed_watering_frequency_minutes: partial.fixed_watering_frequency_minutes ?? null,
+          smart_watering_frequency_seconds: partial.smart_watering_frequency_seconds ?? null,
+          virtual_solar_sync_watering_frequency_minutes:
+            partial.virtual_solar_sync_watering_frequency_minutes ?? null,
           run_next_available_start_time: partial.run_next_available_start_time ?? null,
           pre_configured_watering_schedule_id: partial.pre_configured_watering_schedule_id ?? null,
           cycle_soak_enable: partial.cycle_soak_enable ?? null,
-          cycle_custom_time: partial.cycle_custom_time ?? null,
-          soak_custom_time: partial.soak_custom_time ?? null,
-          factors: partial.factors ?? null,
+          cycle_custom_time_minutes: partial.cycle_custom_time_minutes ?? null,
+          soak_custom_time_minutes: partial.soak_custom_time_minutes ?? null,
+          monthly_adjustment_percents: partial.monthly_adjustment_percents ?? null,
           sensor_ids: partial.sensor_ids ?? null,
           reusable_schedule: partial.reusable_schedule ?? null,
           reusable_schedule_name: partial.reusable_schedule_name ?? null,
@@ -408,16 +408,16 @@ export function registerSchedulingTools(
   server.registerTool(
     'update_seasonal_adjustments',
     {
-      description: `${PHYSICAL} replace the 12 seasonal adjustment factors on a controller. \`factors\` must be exactly 12 ints. Pass \`preview: true\` to see what would be sent.`,
+      description: `${PHYSICAL} replace the 12 seasonal adjustment factors on a controller. \`monthly_adjustment_percents\` must be exactly 12 ints. Pass \`preview: true\` to see what would be sent.`,
       inputSchema: SeasonalAdjustmentsInput,
     },
-    async ({ controller_id, factors, preview }) =>
+    async ({ controller_id, monthly_adjustment_percents, preview }) =>
       wrap('update_seasonal_adjustments', async () =>
         previewOrApply(
           'updateSeasonalAdjustments',
-          { controller_id, factors },
+          { controller_id, monthly_adjustment_percents },
           preview,
-          async () => api.updateSeasonalAdjustments(controller_id, factors),
+          async () => api.updateSeasonalAdjustments(controller_id, monthly_adjustment_percents),
         ),
       ),
   );

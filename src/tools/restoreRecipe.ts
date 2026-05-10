@@ -47,10 +47,10 @@ interface SnapshotZoneSettings {
   number: number;
   icon: number | null;
   master_valve_override: number;
-  watering_adjustment: number | null;
+  watering_adjustment_percent: number | null;
   cycle_soak_enable: boolean | null;
-  cycle_custom_time: number | null;
-  soak_custom_time: number | null;
+  cycle_custom_time_minutes: number | null;
+  soak_custom_time_minutes: number | null;
   flow_monitoring_method: string | null;
   current_monitoring_method: string | null;
   flow_monitoring_value: number | null;
@@ -60,14 +60,14 @@ interface SnapshotZoneSettings {
   global_master_valve: number | null;
   schedule_adjustment_ids: number[] | null;
   watering_type: number | null;
-  run_time: number | null;
+  run_time_minutes: number | null;
   watering_frequency_mode: number | null;
-  fixed_watering_frequency: number | null;
-  smart_watering_frequency: number | null;
-  virtual_solar_sync_watering_frequency: number | null;
+  fixed_watering_frequency_minutes: number | null;
+  smart_watering_frequency_seconds: number | null;
+  virtual_solar_sync_watering_frequency_minutes: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
-  factors: number[] | null;
+  monthly_adjustment_percents: number[] | null;
   sensor_ids: number[] | null;
   reusable_schedule: boolean | null;
   reusable_schedule_name: string | null;
@@ -99,8 +99,8 @@ interface SnapshotSensor {
     sensor_type: string | null;
     mode_type: string;
     customer_id: number | null;
-    delay: number | null;
-    off_timer: number | null;
+    delay_seconds: number | null;
+    off_timer_seconds: number | null;
     flow_rate: number | null;
   };
 }
@@ -122,9 +122,9 @@ interface SnapshotStandardProgram {
   scheduling_method: number | null;
   monthly_watering_adjustments: number[];
   schedule_adjustment_ids: number[];
-  valid_from: number | null;
-  valid_to: number | null;
-  periodicity: { period: number; series_start: string | null } | null;
+  valid_from_epoch_seconds: number | null;
+  valid_to_epoch_seconds: number | null;
+  periodicity: { period: number; series_start_epoch_seconds: number | null } | null;
   per_zone_run_times: Array<{ zone_id: number; zone_number: number; run_time_group_id: number; duration_minutes: number }>;
 }
 
@@ -135,7 +135,7 @@ export interface SnapshotForRecipe {
     program_mode?: string | null;
     location?: { address: string | null; latitude: number | null; longitude: number | null } | null;
     master_valve?: { zone_number: number | null } | null;
-    seasonal_adjustments: { factors: number[] };
+    seasonal_adjustments: { monthly_adjustment_percents: number[] };
     watering_triggers: Record<string, unknown> | null;
     zones: SnapshotZone[];
     programs: Array<Record<string, unknown>>;
@@ -152,6 +152,17 @@ export interface SnapshotForRecipe {
 export function buildRestoreCaveats(snapshot: SnapshotForRecipe): string[] {
   const caveats: string[] = [];
   const c = snapshot.controller;
+
+  // Caveat: v5-and-earlier snapshots use un-suffixed field names (cycle_custom_time,
+  // inter_zone_delay, interval, factors, etc.) which differ from this server's v6 naming
+  // convention. Their embedded _restore_recipe args use the old names and will fail Zod
+  // validation when replayed against the current server. To replay an older snapshot,
+  // use the server version that captured it.
+  if (snapshot.snapshot_version < 6) {
+    caveats.push(
+      `This snapshot was captured by server version ${snapshot.snapshot_version} (pre-v6). The _restore_recipe args use the old un-suffixed field names (e.g. cycle_custom_time, factors, interval) which are incompatible with the current server's v6 naming convention. Do NOT replay this snapshot's recipe against the current server — field names will fail Zod validation. Use the server version that captured this snapshot, or manually translate field names to the v6 convention.`,
+    );
+  }
 
   // Caveat: zones with _unreadable_fields populated. update_zone_settings requires
   // many fields the read schema doesn't expose; AI must supply them at restore time
@@ -309,10 +320,10 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
   }
 
   // 1d. update_seasonal_adjustments — always emit if 12 factors are present.
-  if (c.seasonal_adjustments.factors.length === 12) {
+  if (c.seasonal_adjustments.monthly_adjustment_percents.length === 12) {
     push(
       'update_seasonal_adjustments',
-      { controller_id: controllerId, factors: c.seasonal_adjustments.factors },
+      { controller_id: controllerId, monthly_adjustment_percents: c.seasonal_adjustments.monthly_adjustment_percents },
       [],
     );
   }
@@ -332,8 +343,8 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
       controller_id: controllerId,
       extend_water_temperature: unwrap('extend_water_temperature'),
       extend_water_temperature_enabled: passthrough('extend_water_temperature_enabled'),
-      extend_water_temperature_percentage: passthrough('extend_water_temperature_percentage'),
-      extend_water_humidity: passthrough('extend_water_humidity'),
+      extend_water_temperature_percent: passthrough('extend_water_temperature_percent'),
+      extend_water_humidity_percent: passthrough('extend_water_humidity_percent'),
       extend_water_humidity_enabled: passthrough('extend_water_humidity_enabled'),
       suspend_water_week_rain: unwrap('suspend_water_week_rain'),
       suspend_water_rain_days: passthrough('suspend_water_rain_days'),
@@ -342,7 +353,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
       suspend_water_rain_enabled: passthrough('suspend_water_rain_enabled'),
       suspend_water_temperature: unwrap('suspend_water_temperature'),
       suspend_water_temperature_enabled: passthrough('suspend_water_temperature_enabled'),
-      suspend_probability_of_precipitation: passthrough('suspend_probability_of_precipitation'),
+      suspend_probability_of_precipitation_percent: passthrough('suspend_probability_of_precipitation_percent'),
       suspend_probability_of_precipitation_enabled: passthrough('suspend_probability_of_precipitation_enabled'),
       suspend_wind: unwrap('suspend_wind'),
       suspend_wind_enabled: passthrough('suspend_wind_enabled'),
@@ -350,7 +361,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
       enable_evapotranspiration_forecast_rain: passthrough('enable_evapotranspiration_forecast_rain'),
       reduce_water_temperature_enabled: passthrough('reduce_water_temperature_enabled'),
       reduce_water_temperature: unwrap('reduce_water_temperature'),
-      reduce_water_temperature_percentage: passthrough('reduce_water_temperature_percentage'),
+      reduce_water_temperature_percent: passthrough('reduce_water_temperature_percent'),
     };
     push(
       'update_watering_triggers',
@@ -381,8 +392,8 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         name: obs.model_name ?? `Restored custom type for sensor ${sensor.id}`,
         custom_sensor_type: obs.sensor_type,
         mode_type: obs.mode_type,
-        delay: obs.delay,
-        off_timer: obs.off_timer,
+        delay_seconds: obs.delay_seconds,
+        off_timer_seconds: obs.off_timer_seconds,
         flow_sensor_rate: obs.flow_rate,
       },
       [],
@@ -436,8 +447,8 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         program_type: null,
         day_pattern: null,
         standard_program_day_pattern: sp.standard_program_day_pattern,
-        interval: sp.periodicity?.period ?? null,
-        series_start: null,
+        interval_days: sp.periodicity?.period ?? null,
+        series_start_epoch_seconds: sp.periodicity?.series_start_epoch_seconds ?? null,
         start_times: sp.start_times,
         zone_run_times: sp.per_zone_run_times.map((r) => ({
           zone_number: r.zone_number,
@@ -446,12 +457,12 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         })),
         schedule_adjustment_ids: sp.schedule_adjustment_ids,
         seasonal_adjustment_factors: sp.monthly_watering_adjustments,
-        valid_from: sp.valid_from,
-        valid_to: sp.valid_to,
+        valid_from_epoch_seconds: sp.valid_from_epoch_seconds,
+        valid_to_epoch_seconds: sp.valid_to_epoch_seconds,
         ignore_rain_sensor: null,
       },
       [],
-      'program_type, day_pattern, series_start, run_duration, ignore_rain_sensor are not exposed by the read schema and arrive null. Resolve from get_program(controller_id, program_id, "Standard") before applying.',
+      'program_type, day_pattern, run_duration, ignore_rain_sensor are not exposed by the read schema and arrive null. Resolve from get_program(controller_id, program_id, "Standard") before applying.',
     );
     programStepOrders.push(order);
   }
@@ -476,19 +487,19 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
         watering_mode: s.watering_mode,
         global_master_valve: s.global_master_valve,
         schedule_adjustment_ids: s.schedule_adjustment_ids ?? [],
-        watering_adjustment: s.watering_adjustment,
+        watering_adjustment_percent: s.watering_adjustment_percent,
         watering_type: s.watering_type,
-        run_time: s.run_time,
+        run_time_minutes: s.run_time_minutes,
         watering_frequency_mode: s.watering_frequency_mode,
-        fixed_watering_frequency: s.fixed_watering_frequency,
-        smart_watering_frequency: s.smart_watering_frequency,
-        virtual_solar_sync_watering_frequency: s.virtual_solar_sync_watering_frequency,
+        fixed_watering_frequency_minutes: s.fixed_watering_frequency_minutes,
+        smart_watering_frequency_seconds: s.smart_watering_frequency_seconds,
+        virtual_solar_sync_watering_frequency_minutes: s.virtual_solar_sync_watering_frequency_minutes,
         run_next_available_start_time: s.run_next_available_start_time,
         pre_configured_watering_schedule_id: s.pre_configured_watering_schedule_id,
         cycle_soak_enable: s.cycle_soak_enable,
-        cycle_custom_time: s.cycle_custom_time,
-        soak_custom_time: s.soak_custom_time,
-        factors: s.factors,
+        cycle_custom_time_minutes: s.cycle_custom_time_minutes,
+        soak_custom_time_minutes: s.soak_custom_time_minutes,
+        monthly_adjustment_percents: s.monthly_adjustment_percents,
         sensor_ids: s.sensor_ids,
         reusable_schedule: s.reusable_schedule,
         reusable_schedule_name: s.reusable_schedule_name,

@@ -30,14 +30,14 @@ const ZONE_UNREADABLE_FIELDS = [
   'global_master_valve',
   'schedule_adjustment_ids',
   'watering_type',
-  'run_time',
+  'run_time_minutes',
   'watering_frequency_mode',
-  'fixed_watering_frequency',
-  'smart_watering_frequency',
-  'virtual_solar_sync_watering_frequency',
+  'fixed_watering_frequency_minutes',
+  'smart_watering_frequency_seconds',
+  'virtual_solar_sync_watering_frequency_minutes',
   'run_next_available_start_time',
   'pre_configured_watering_schedule_id',
-  'factors',
+  'monthly_adjustment_percents',
   'sensor_ids',
   'reusable_schedule',
   'reusable_schedule_name',
@@ -46,6 +46,50 @@ const ZONE_UNREADABLE_FIELDS = [
   'flow_monitoring_value',
   'current_monitoring_value',
 ] as const satisfies readonly (keyof ZoneWritable)[];
+
+// Registered unit suffixes — every fixed-unit numeric field name must end in one of these.
+export const UNIT_SUFFIXES = new Set(['_minutes', '_seconds', '_days', '_percent', '_percents', '_epoch_seconds']);
+
+// Unit-less identifier names exempt from the suffix rule: ids, indices, spatial coords, and
+// dimensionless calibration ratios. LocalizedValueType fields (value varies per user account
+// preference) use {value, unit} wrapping instead of suffixes and are also exempt from this list.
+export const IDENTIFIER_WHITELIST = new Set([
+  // Identifiers
+  'id', 'zone_id', 'controller_id', 'program_id', 'sensor_id', 'expander_id',
+  'model_id', 'run_time_group_id', 'custom_sensor_type_id', 'customer_id',
+  'pre_configured_watering_schedule_id', 'note_id',
+  // Zone / device numbers (ordinal, not unit-bearing)
+  'zone_number', 'input_number', 'number',
+  // Spatial
+  'latitude', 'longitude',
+  // Dimensionless calibration
+  'divisor', 'flow_rate', 'flow_sensor_rate',
+  // Zone master valve: -1/0/N are control codes, not a measurable quantity
+  'master_valve_override',
+  // LocalizedValueType-backed inputs (unit follows user account preference; bare number on write)
+  'extend_water_temperature', 'suspend_water_temperature', 'reduce_water_temperature',
+  'suspend_water_week_rain', 'suspend_water_rain', 'suspend_wind',
+  // Monitoring setpoints correspond to LocalizedValueType read fields (user-pref units)
+  'flow_monitoring_value', 'current_monitoring_value',
+  // Watering program run times and frequency values — DEFERRED (units not verified on live account)
+  'fixed_watering_run_time', 'smart_watering_run_time', 'virtual_solar_sync_watering_run_time',
+  'fixed_watering_frequency_value', 'smart_watering_frequency_value',
+  'virtual_solar_sync_watering_frequency_value', 'watering_program_adjustment',
+  'run_duration',
+  // Mode / type enum inputs (Int discriminator, not a measured value)
+  'watering_mode', 'watering_type', 'watering_frequency_mode', 'program_type',
+  'watering_program_type', 'fixed_watering_frequency_mode', 'virtual_solar_sync_watering_frequency_mode',
+  // Day-of-week Int flags (0/1)
+  'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+  // Zone-level computed / non-unit fields
+  'icon', 'global_master_valve',
+  // TimeZone offset (minutes from UTC — not a "duration" in the irrigation sense)
+  'offset',
+  // Fields whose name IS the unit word (self-describing; no suffix needed)
+  'minutes', 'days',
+  // Reporting run-summary period range parameters (calendar units, not physical measurements)
+  'start_week', 'end_week', 'start_month', 'end_month', 'start_year', 'end_year', 'year',
+]);
 
 // Several Hydrawise list types declare nullable members ([Expander], [Module], [ZoneNote]!, [ControllerNote]!, [ExpanderFirmware]); strip nulls so per-element serializers can be null-blind. Don't "simplify" to `arr ?? []` — runtime nulls would crash with "Cannot read properties of null".
 export function nonNull<T>(arr: (T | null)[] | null | undefined): T[] {
@@ -81,7 +125,7 @@ export function serializeController(controller: Controller): Record<string, unkn
       : null,
     location: controller.location ? serializeLocation(controller.location) : null,
     time_zone: controller.settings?.timeZone ? serializeTimeZone(controller.settings.timeZone) : null,
-    inter_zone_delay: controller.settings?.zones?.interZoneDelay ?? null,
+    inter_zone_delay_seconds: controller.settings?.zones?.interZoneDelay ?? null,
     master_valve: controller.masterZone ? serializeMasterValve(controller.masterZone) : null,
     expanders: nonNull(controller.expanders).map(serializeExpander),
     modules: nonNull(controller.hardware?.modules).map(serializeModule),
@@ -111,8 +155,8 @@ export function serializeTimeZone(tz: TimeZoneRead): Record<string, unknown> {
 export function serializeMasterValve(mv: MasterValveRead): Record<string, unknown> {
   return {
     zone_number: mv.zoneNumber?.value ?? null,
-    delay: mv.delay,
-    post_timer: mv.postTimer,
+    delay_seconds: mv.delay,
+    post_timer_seconds: mv.postTimer,
   };
 }
 
@@ -178,11 +222,11 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     icon: zone.icon?.id ?? null,
     // -1 = global, 0 = always disabled, else specific zone number.
     master_valve_override: zone.masterValve,
-    watering_adjustment: ws?.fixedWateringAdjustment ?? null,
+    watering_adjustment_percent: ws?.fixedWateringAdjustment ?? null,
     // cycle_soak_enable isn't exposed in reads — infer from cycleAndSoakSettings presence; null when wateringSettings is missing entirely.
     cycle_soak_enable: ws ? ws.cycleAndSoakSettings != null : null,
-    cycle_custom_time: ws?.cycleAndSoakSettings?.cycleDuration ?? null,
-    soak_custom_time: ws?.cycleAndSoakSettings?.soakDuration ?? null,
+    cycle_custom_time_minutes: ws?.cycleAndSoakSettings?.cycleDuration ?? null,
+    soak_custom_time_minutes: ws?.cycleAndSoakSettings?.soakDuration ?? null,
     // Monitoring method/value aren't readable; caller supplies. monitoring_observed below is read-only.
     flow_monitoring_method: null,
     current_monitoring_method: null,
@@ -213,14 +257,14 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     global_master_valve: null,
     schedule_adjustment_ids: null,
     watering_type: null,
-    run_time: null,
+    run_time_minutes: null,
     watering_frequency_mode: null,
-    fixed_watering_frequency: null,
-    smart_watering_frequency: null,
-    virtual_solar_sync_watering_frequency: null,
+    fixed_watering_frequency_minutes: null,
+    smart_watering_frequency_seconds: null,
+    virtual_solar_sync_watering_frequency_minutes: null,
     run_next_available_start_time: null,
     pre_configured_watering_schedule_id: null,
-    factors: null,
+    monthly_adjustment_percents: null,
     sensor_ids: null,
     reusable_schedule: null,
     reusable_schedule_name: null,
@@ -240,8 +284,8 @@ export function serializeWateringTriggers(t: WateringTriggersRead): Record<strin
   return {
     extend_water_temperature: serializeUnitValue(t.extendWaterTemperature),
     extend_water_temperature_enabled: t.extendWaterTemperatureEnabled,
-    extend_water_temperature_percentage: t.extendWaterTemperaturePercentage,
-    extend_water_humidity: t.extendWaterHumidity,
+    extend_water_temperature_percent: t.extendWaterTemperaturePercentage,
+    extend_water_humidity_percent: t.extendWaterHumidity,
     extend_water_humidity_enabled: t.extendWaterHumidityEnabled,
     suspend_water_week_rain: serializeUnitValue(t.suspendWaterWeekRain),
     suspend_water_rain_days: t.suspendWaterRainDays,
@@ -250,7 +294,7 @@ export function serializeWateringTriggers(t: WateringTriggersRead): Record<strin
     suspend_water_rain_enabled: t.suspendWaterRainEnabled,
     suspend_water_temperature: serializeUnitValue(t.suspendWaterTemperature),
     suspend_water_temperature_enabled: t.suspendWaterTemperatureEnabled,
-    suspend_probability_of_precipitation: t.suspendProbabilityOfPrecipitation,
+    suspend_probability_of_precipitation_percent: t.suspendProbabilityOfPrecipitation,
     suspend_probability_of_precipitation_enabled: t.suspendProbabilityOfPrecipitationEnabled,
     suspend_wind: serializeUnitValue(t.suspendWind),
     suspend_wind_enabled: t.suspendWindEnabled,
@@ -258,7 +302,7 @@ export function serializeWateringTriggers(t: WateringTriggersRead): Record<strin
     enable_evapotranspiration_forecast_rain: t.enableEvapotranspirationForecastRain,
     reduce_water_temperature_enabled: t.reduceWaterTemperatureEnabled,
     reduce_water_temperature: serializeUnitValue(t.reduceWaterTemperature),
-    reduce_water_temperature_percentage: t.reduceWaterTemperaturePercentage,
+    reduce_water_temperature_percent: t.reduceWaterTemperaturePercentage,
   };
 }
 
@@ -367,8 +411,8 @@ export function serializeSensor(s: SensorRead): Record<string, unknown> {
       divisor: s.model.divisor,
       flow_rate: s.model.flowRate,
       off_level: s.model.offLevel,
-      off_timer: s.model.offTimer,
-      delay: s.model.delay,
+      off_timer_seconds: s.model.offTimer,
+      delay_seconds: s.model.delay,
       active: s.model.active,
       input_label: s.input.label,
       // SelectedOption wrapper is `SelectedOption!` per the live schema, but Hydrawise
@@ -396,8 +440,8 @@ export function serializeSensorModel(m: SensorModelRead): Record<string, unknown
     mode_type: m.modeType,
     category: m.category ? { id: m.category.id, name: m.category.name } : null,
     // Calibration / behaviour fields useful when a custom type is being inspected.
-    delay: m.delay,
-    off_timer: m.offTimer,
+    delay_seconds: m.delay,
+    off_timer_seconds: m.offTimer,
     off_level: m.offLevel,
     divisor: m.divisor,
     flow_rate: m.flowRate,
@@ -435,12 +479,12 @@ export function serializeStandardProgram(p: import('../hydrawise/queries.js').St
     periodicity: p.periodicity
       ? {
           period: p.periodicity.period,
-          series_start: p.periodicity.seriesStart?.value ?? null,
+          series_start_epoch_seconds: p.periodicity.seriesStart?.timestamp ?? null,
         }
       : null,
     // timeRange wrapper is non-null (Unit! per schema); inner validFrom/validTo are nullable.
-    valid_from: p.timeRange.validFrom,
-    valid_to: p.timeRange.validTo,
+    valid_from_epoch_seconds: p.timeRange.validFrom,
+    valid_to_epoch_seconds: p.timeRange.validTo,
     // Defensive `?? []` on schema-declared non-null arrays — Hydrawise demonstrably
     // violates `!` (see CLAUDE.md gotcha re Zone.status.lastRun). A null upstream array
     // would crash the whole snapshot via `Promise.all` rejection in dump_controller_snapshot.

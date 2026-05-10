@@ -372,19 +372,19 @@ export interface ZoneWritable {
   watering_mode: number;
   global_master_valve: number;
   schedule_adjustment_ids: number[];
-  watering_adjustment: number;
+  watering_adjustment_percent: number;
   watering_type: number;
-  run_time: number | null;
+  run_time_minutes: number | null;
   watering_frequency_mode: number;
-  fixed_watering_frequency: number | null;
-  smart_watering_frequency: number | null;
-  virtual_solar_sync_watering_frequency: number | null;
+  fixed_watering_frequency_minutes: number | null;
+  smart_watering_frequency_seconds: number | null;
+  virtual_solar_sync_watering_frequency_minutes: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
   cycle_soak_enable: boolean | null;
-  cycle_custom_time: number | null;
-  soak_custom_time: number | null;
-  factors: number[] | null;
+  cycle_custom_time_minutes: number | null;
+  soak_custom_time_minutes: number | null;
+  monthly_adjustment_percents: number[] | null;
   sensor_ids: number[] | null;
   reusable_schedule: boolean | null;
   reusable_schedule_name: string | null;
@@ -408,8 +408,8 @@ export interface WateringTriggersWritable {
   controller_id: number;
   extend_water_temperature: number;
   extend_water_temperature_enabled: boolean;
-  extend_water_temperature_percentage: number;
-  extend_water_humidity: number;
+  extend_water_temperature_percent: number;
+  extend_water_humidity_percent: number;
   extend_water_humidity_enabled: boolean;
   suspend_water_week_rain: number;
   suspend_water_rain_days: number;
@@ -418,7 +418,7 @@ export interface WateringTriggersWritable {
   suspend_water_rain_enabled: boolean;
   suspend_water_temperature: number;
   suspend_water_temperature_enabled: boolean;
-  suspend_probability_of_precipitation: number;
+  suspend_probability_of_precipitation_percent: number;
   suspend_probability_of_precipitation_enabled: boolean;
   suspend_wind: number;
   suspend_wind_enabled: boolean;
@@ -426,7 +426,7 @@ export interface WateringTriggersWritable {
   enable_evapotranspiration_forecast_rain: boolean;
   reduce_water_temperature_enabled: boolean;
   reduce_water_temperature: number;
-  reduce_water_temperature_percentage: number;
+  reduce_water_temperature_percent: number;
 }
 
 /** A ProgramStartTime in writable form, mirroring `updateProgramStartTime`. */
@@ -456,14 +456,14 @@ export interface StandardProgramWritable {
   program_type: number;
   day_pattern: string;
   standard_program_day_pattern: string | null;
-  interval: number | null;
-  series_start: number | null;
+  interval_days: number | null;
+  series_start_epoch_seconds: number | null;
   start_times: string[];
   zone_run_times: { zone_number: number; run_time_group_id?: number | null; run_duration?: number | null }[];
   schedule_adjustment_ids: number[];
   seasonal_adjustment_factors: number[];
-  valid_from: number | null;
-  valid_to: number | null;
+  valid_from_epoch_seconds: number | null;
+  valid_to_epoch_seconds: number | null;
   ignore_rain_sensor: boolean | null;
 }
 
@@ -826,7 +826,7 @@ export const PROGRAMS_FULL_QUERY = /* GraphQL */ `
           periodicity {
             period
             seriesStart {
-              value
+              timestamp
             }
           }
           timeRange {
@@ -900,7 +900,7 @@ export interface StandardProgramRead {
   ignoreRainSensor: boolean;
   daysRun: string[];
   standardProgramDayPattern: string | null;
-  periodicity: { period: number; seriesStart: { value: string } | null } | null;
+  periodicity: { period: number; seriesStart: { timestamp: number } | null } | null;
   // The schema's `timeRange: Unit!` is non-null at the wrapper; only the inner validFrom/validTo are nullable (null = unbounded on that side). Keep the wrapper non-null to match.
   timeRange: { validFrom: number | null; validTo: number | null };
   conditionalWateringAdjustments: { id: number; label: string }[];
@@ -1909,19 +1909,19 @@ export interface ZoneCreatePayload {
   watering_mode: number;
   global_master_valve: number;
   schedule_adjustment_ids: number[];
-  watering_adjustment: number;
+  watering_adjustment_percent: number;
   watering_type: number;
-  run_time: number | null;
+  run_time_minutes: number | null;
   watering_frequency_mode: number;
-  fixed_watering_frequency: number | null;
-  smart_watering_frequency: number | null;
-  virtual_solar_sync_watering_frequency: number | null;
+  fixed_watering_frequency_minutes: number | null;
+  smart_watering_frequency_seconds: number | null;
+  virtual_solar_sync_watering_frequency_minutes: number | null;
   run_next_available_start_time: boolean | null;
   pre_configured_watering_schedule_id: number | null;
   cycle_soak_enable: boolean | null;
-  cycle_custom_time: number | null;
-  soak_custom_time: number | null;
-  factors: number[] | null;
+  cycle_custom_time_minutes: number | null;
+  soak_custom_time_minutes: number | null;
+  monthly_adjustment_percents: number[] | null;
   sensor_ids: number[] | null;
   reusable_schedule: boolean | null;
   reusable_schedule_name: string | null;
@@ -2261,8 +2261,8 @@ export interface CustomSensorTypeCreatePayload {
   name: string;
   custom_sensor_type: CustomSensorTypeEnum;
   mode_type: CustomSensorModeType;
-  delay?: number | null;
-  off_timer?: number | null;
+  delay_seconds?: number | null;
+  off_timer_seconds?: number | null;
   flow_sensor_rate?: number | null;
 }
 
@@ -2273,7 +2273,7 @@ export interface CustomSensorTypeUpdatePayload {
   name: string;
   custom_sensor_type: CustomSensorTypeEnum;
   mode_type: CustomSensorModeType;
-  delay?: number | null;
-  off_timer?: number | null;
+  delay_seconds?: number | null;
+  off_timer_seconds?: number | null;
   flow_sensor_rate?: number | null;
 }

@@ -222,13 +222,13 @@ async function callTool(app: ReturnType<typeof makeApp>, toolName: string, args:
   };
 }
 
-describe('dump_controller_snapshot v5', () => {
-  it('returns snapshot_version 5', async () => {
+describe('dump_controller_snapshot v6', () => {
+  it('returns snapshot_version 6', async () => {
     const app = makeApp();
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
     expect(resp.result?.isError).toBeFalsy();
     const snap = JSON.parse(resp.result!.content[0]!.text) as { snapshot_version: number };
-    expect(snap.snapshot_version).toBe(5);
+    expect(snap.snapshot_version).toBe(6);
   });
 
   it('controller block includes location, time_zone, master_valve, expanders, modules, run_time_groups, controller_notes, device_id', async () => {
@@ -240,7 +240,7 @@ describe('dump_controller_snapshot v5', () => {
     expect(snap.controller.device_id).toBe(555);
     expect(snap.controller.location).toMatchObject({ latitude: 39.6, longitude: -104.9, address: '1 Tufts Ln' });
     expect(snap.controller.time_zone).toEqual({ name: 'America/Denver', offset: -25200 });
-    expect(snap.controller.master_valve).toEqual({ zone_number: 0, delay: 0, post_timer: 0 });
+    expect(snap.controller.master_valve).toEqual({ zone_number: 0, delay_seconds: 0, post_timer_seconds: 0 });
     expect(snap.controller.expanders).toHaveLength(1);
     expect(snap.controller.modules).toHaveLength(1);
     expect(snap.controller.run_time_groups).toEqual([{ id: 200, name: null, duration_minutes: 10 }]);
