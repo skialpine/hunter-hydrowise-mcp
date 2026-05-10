@@ -308,6 +308,7 @@ export class HydrawiseApi {
     return data.zone;
   }
 
+
   // controllerNotes and zoneNotes are subscription-gated: fetching them as part of
   // CONTROLLER_FIELDS or ZONE_FULL_QUERY causes Hydrawise to null the entire parent
   // object on free accounts. These dedicated methods let callers handle the error

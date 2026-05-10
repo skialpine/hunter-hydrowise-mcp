@@ -63,6 +63,7 @@ export interface ControllerSnapshotV5 {
     watering_triggers: Record<string, unknown> | null;
     sensors: Array<Record<string, unknown>>;
     advanced_programs: Array<Record<string, unknown>>;
+    controller_notes: Array<Record<string, unknown>>;
   };
   _restore_recipe: RestoreStep[];
   _caveats: string[];
@@ -71,25 +72,48 @@ export interface ControllerSnapshotV5 {
 // controllerNotes and zoneNotes are subscription-gated on Hydrawise's side. When
 // included in the shared CONTROLLER_FIELDS / ZONE_FULL_QUERY they cause a business-
 // level GraphQL error that nulls the entire parent, breaking all controller queries.
-// These helpers fetch notes in isolation and swallow the subscription error so a
-// snapshot can still be captured on free accounts (notes fields come back as []).
+// These helpers fetch notes in isolation and degrade gracefully on free accounts:
+// subscription errors return [] and emit a warning; all other errors propagate.
 async function fetchControllerNotesSafe(
   api: HydrawiseApi,
   controllerId: number,
+  logger?: Logger,
 ): Promise<ControllerNoteRead[]> {
   try {
     return await api.getControllerNotes(controllerId);
   } catch (err) {
-    if (err instanceof HydrawiseAPIError && err.message.includes('subscription')) return [];
+    if (
+      err instanceof HydrawiseAPIError &&
+      err.message.includes('Feature is not available under your subscription')
+    ) {
+      logger?.warn(
+        'snapshot: controller notes unavailable (subscription-gated), captured as []',
+        { controller_id: controllerId, error: err.message },
+      );
+      return [];
+    }
     throw err;
   }
 }
 
-async function fetchZoneNotesSafe(api: HydrawiseApi, zoneId: number): Promise<ZoneNoteRead[]> {
+async function fetchZoneNotesSafe(
+  api: HydrawiseApi,
+  zoneId: number,
+  logger?: Logger,
+): Promise<ZoneNoteRead[]> {
   try {
     return await api.getZoneNotes(zoneId);
   } catch (err) {
-    if (err instanceof HydrawiseAPIError && err.message.includes('subscription')) return [];
+    if (
+      err instanceof HydrawiseAPIError &&
+      err.message.includes('Feature is not available under your subscription')
+    ) {
+      logger?.warn(
+        'snapshot: zone notes unavailable (subscription-gated), captured as []',
+        { zone_id: zoneId, error: err.message },
+      );
+      return [];
+    }
     throw err;
   }
 }
@@ -139,9 +163,15 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
             // are derived from this same array, so no N+1 zone-fan-out.
             api.getControllerSensors(controller_id),
             // Notes are subscription-gated; fetched separately so a business-error on
-            // one field doesn't null the entire controller or zone. Falls back to [].
-            fetchControllerNotesSafe(api, controller_id),
-            Promise.all(zones.map((z) => fetchZoneNotesSafe(api, z.id))),
+            // one field doesn't null the entire controller or zone. Subscription errors
+            // fall back to []; all other errors propagate.
+            fetchControllerNotesSafe(api, controller_id, logger),
+            Promise.all(
+              zones.map(async (z) => ({
+                zone_id: z.id,
+                notes: await fetchZoneNotesSafe(api, z.id, logger),
+              })),
+            ),
           ]);
 
           // Inline full program details — dispatch on program_type. Standard programs use
@@ -207,7 +237,7 @@ export function registerBackupTools(server: McpServer, api: HydrawiseApi, logger
 
           const settingsByZone = new Map(zoneSettings.map((s) => [s.zone_id, s.settings]));
           const startsByZone = new Map(startTimesByZone.map((s) => [s.zone_id, s.start_times]));
-          const notesByZone = new Map(zones.map((z, i) => [z.id, zoneNotesByZone[i]]));
+          const notesByZone = new Map(zoneNotesByZone.map((r) => [r.zone_id, r.notes]));
 
           const enrichedZones = zones.map((z) => {
             const summary = serializeZone(z);

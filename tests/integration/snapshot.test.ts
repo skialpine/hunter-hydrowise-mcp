@@ -3,6 +3,7 @@ import request from 'supertest';
 import type { Config } from '../../src/config.js';
 import { HydrawiseApi } from '../../src/hydrawise/api.js';
 import type { HydrawiseClient, Variables } from '../../src/hydrawise/client.js';
+import { HydrawiseAPIError } from '../../src/errors.js';
 import type {
   Controller,
   StandardProgramRead,
@@ -491,5 +492,29 @@ describe('dump_controller_snapshot v5', () => {
       // Per-zone advanced_program is `null` (not omitted) — convention matches sensors.
       expect(z.settings.advanced_program).toBeNull();
     }
+  });
+
+  it('degrades gracefully when controller notes are subscription-gated (returns [] not error)', async () => {
+    const app = makeApp({
+      getControllerNotes: async () => {
+        throw new HydrawiseAPIError('Feature is not available under your subscription.');
+      },
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const snap = JSON.parse(resp.result!.content[0]!.text) as {
+      controller: { controller_notes: unknown[] };
+    };
+    expect(snap.controller.controller_notes).toEqual([]);
+  });
+
+  it('propagates non-subscription HydrawiseAPIError from getControllerNotes', async () => {
+    const app = makeApp({
+      getControllerNotes: async () => {
+        throw new HydrawiseAPIError('Internal server error');
+      },
+    });
+    const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });
+    expect(resp.result?.isError).toBe(true);
   });
 });

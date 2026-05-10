@@ -1969,6 +1969,9 @@ export interface SensorInputRead {
 export interface SensorModelRead {
   id: number;
   name: string | null;
+  // Supersedes the removed `mode` field — same type/value, but `mode` causes an
+  // internal server error on Hydrawise's side for built-in models. Do not re-add `mode`
+  // to SENSOR_MODEL_FIELDS. Serialised as `mode_type` in the sensor `_observed` block.
   modeType: CustomSensorModeType;
   active: boolean | null;
   offLevel: number | null;

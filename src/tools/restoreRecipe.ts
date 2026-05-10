@@ -73,6 +73,9 @@ interface SnapshotZoneSettings {
   reusable_schedule_name: string | null;
   _unreadable_fields: string[];
   advanced_program?: { id: number; name: string; advanced_program_id: number } | null;
+  // Injected by backup.ts after serializeZoneSettings — not part of the ZoneRichRead
+  // read shape, but always present in the snapshot envelope (empty array when no notes).
+  zone_notes?: SnapshotNote[];
 }
 
 interface SnapshotZone {
@@ -571,8 +574,7 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
 
   for (const zone of c.zones) {
     if (!zone.settings) continue;
-    // zone_notes lives inside the zone settings record — narrow type here.
-    const zoneNotes = (zone.settings as unknown as { zone_notes?: SnapshotNote[] }).zone_notes ?? [];
+    const zoneNotes = zone.settings.zone_notes ?? [];
     for (const note of zoneNotes) {
       push(
         'create_zone_note',
