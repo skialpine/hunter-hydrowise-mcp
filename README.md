@@ -26,23 +26,64 @@ The model can drive read-only diagnostics freely. Every write tool is prefixed `
 
 ## Install & run
 
+**1. Clone and install dependencies:**
+
 ```bash
 git clone <this repo>
 cd hunter-hydrowise-mcp
 npm install
-npm run build
+```
 
-# run with credentials in env
+**2. Build the server (compiles TypeScript to `dist/`):**
+
+```bash
+npm run build
+```
+
+**3. Set your Hydrawise credentials.** Three ways:
+
+```bash
+# Option A: inline on the start command
 HYDRAWISE_USERNAME=you@example.com \
 HYDRAWISE_PASSWORD=*** \
 npm start
+
+# Option B: export in your shell, then start
+export HYDRAWISE_USERNAME=you@example.com
+export HYDRAWISE_PASSWORD=***
+npm start
+
+# Option C: create a .env file in the project root, then start
+#   .env is auto-loaded only when stdin is a TTY (so MCP-client-supplied
+#   env still wins in production)
+cat > .env <<'EOF'
+HYDRAWISE_USERNAME=you@example.com
+HYDRAWISE_PASSWORD=***
+EOF
+npm start
 ```
 
-The server prints `hydrowise-mcp listening on http://127.0.0.1:8765/mcp (MCP 2025-11-25)` on stderr and waits for MCP clients to connect.
+**4. Verify the server is running.** You should see this on stderr:
 
-For development: `npm run dev` (tsx watch).
+```
+hydrowise-mcp listening on http://127.0.0.1:8765/mcp (MCP 2025-11-25)
+```
 
-Once published to npm: `npx hydrowise-mcp`.
+A quick HTTP probe also works:
+
+```bash
+curl -i http://127.0.0.1:8765/mcp
+# Expected: 405 Method Not Allowed (the endpoint is POST-only)
+# 405 means the server is up and reachable.
+```
+
+**5. Stop the server:** `Ctrl-C` in the terminal where it's running.
+
+**Re-running:** `npm start` again. After pulling new code, run `npm run build` first so the bundle in `dist/` is current.
+
+**For development:** `npm run dev` uses tsx-watch — auto-reloads on source changes; no separate build step needed.
+
+**Once published to npm:** `npx hydrowise-mcp` (skips the clone + install).
 
 ## Configure your MCP client
 
