@@ -57,6 +57,7 @@ import {
   UPDATE_VSS_WATERING_PROGRAM_MUTATION,
   UPDATE_WATERING_TRIGGERS_MUTATION,
   UPDATE_ZONE_ADVANCED_MUTATION,
+  UPDATE_ZONE_STANDARD_MUTATION,
   UPDATE_ZONE_NOTE_MUTATION,
   WAKE_CONTROLLER_MUTATION,
   CONTROLLER_SCHEDULE_QUERY,
@@ -105,6 +106,7 @@ import {
   type ZoneCreatePayload,
   type ZoneNoteRead,
   type ZoneRichRead,
+  type ZoneStandardUpdateInput,
   type ZoneWritable,
 } from './queries.js';
 
@@ -446,6 +448,40 @@ export class HydrawiseApi {
       UPDATE_ZONE_ADVANCED_MUTATION,
       zoneWritableToVars(payload),
       (data) => requireMutationResult('updateZoneAdvanced', data.updateZoneAdvanced),
+    );
+  }
+
+  async updateZoneStandard(payload: ZoneStandardUpdateInput): Promise<{ id: number }> {
+    // Build vars without sensorIds first, then conditionally include it.
+    // Passing sensorIds: null causes a Hydrawise 500 — the schema default is []
+    // but null overrides the default server-side instead of using it.
+    // When sensor_ids is not supplied, omit the key entirely so the schema default applies.
+    // CAUTION: what sensorIds actually does on a zone update is unclear — the only live
+    // test was inconclusive (the account's sensor is attached to all zones globally).
+    // Pass sensor_ids explicitly if you know the zone's current sensor IDs.
+    const vars: Record<string, unknown> = {
+      zoneId: payload.zone_id,
+      icon: payload.icon ?? null,
+      iconFileId: payload.icon_file_id ?? null,
+      name: payload.name,
+      number: payload.number,
+      globalMasterValve: payload.global_master_valve,
+      wateringAdjustment: payload.watering_adjustment_percent,
+      cycleSoakEnable: payload.cycle_soak_enable,
+      cycleCustomTime: payload.cycle_custom_time_minutes ?? null,
+      soakCustomTime: payload.soak_custom_time_minutes ?? null,
+      flowMonitoringMethod: payload.flow_monitoring_method ?? null,
+      currentMonitoringMethod: payload.current_monitoring_method ?? null,
+      flowMonitoringValue: payload.flow_monitoring_value ?? null,
+      currentMonitoringValue: payload.current_monitoring_value ?? null,
+    };
+    if (payload.sensor_ids != null) {
+      vars.sensorIds = payload.sensor_ids;
+    }
+    return this.client.mutateRaw(
+      UPDATE_ZONE_STANDARD_MUTATION,
+      vars,
+      (data) => requireMutationResult('updateZoneStandard', data.updateZoneStandard),
     );
   }
 

@@ -1071,6 +1071,66 @@ export const UPDATE_ZONE_ADVANCED_MUTATION = /* GraphQL */ `
   }
 `;
 
+// Writable shape for updateZoneStandard — STANDARD-mode controllers only.
+// Omits all ADVANCED-mode-only fields (watering_mode, watering_type, frequency modes, etc.).
+export interface ZoneStandardUpdateInput {
+  zone_id: number;
+  name: string;
+  number: number;
+  global_master_valve: number;
+  watering_adjustment_percent: number;
+  cycle_soak_enable: boolean;
+  icon?: number | null;
+  icon_file_id?: number | null;
+  cycle_custom_time_minutes?: number | null;
+  soak_custom_time_minutes?: number | null;
+  sensor_ids?: number[] | null;
+  flow_monitoring_method?: MonitoringMethod | null;
+  current_monitoring_method?: MonitoringMethod | null;
+  flow_monitoring_value?: number | null;
+  current_monitoring_value?: number | null;
+}
+
+export const UPDATE_ZONE_STANDARD_MUTATION = /* GraphQL */ `
+  mutation UpdateZoneStandard(
+    $zoneId: Int!
+    $icon: Int
+    $iconFileId: Int
+    $name: String!
+    $number: Int!
+    $globalMasterValve: Int!
+    $wateringAdjustment: Int!
+    $cycleSoakEnable: Boolean!
+    $cycleCustomTime: Int
+    $soakCustomTime: Int
+    $sensorIds: [Int]
+    $flowMonitoringMethod: MonitoringMethodEnum
+    $currentMonitoringMethod: MonitoringMethodEnum
+    $flowMonitoringValue: Float
+    $currentMonitoringValue: Int
+  ) {
+    updateZoneStandard(
+      zoneId: $zoneId
+      icon: $icon
+      iconFileId: $iconFileId
+      name: $name
+      number: $number
+      globalMasterValve: $globalMasterValve
+      wateringAdjustment: $wateringAdjustment
+      cycleSoakEnable: $cycleSoakEnable
+      cycleCustomTime: $cycleCustomTime
+      soakCustomTime: $soakCustomTime
+      sensorIds: $sensorIds
+      flowMonitoringMethod: $flowMonitoringMethod
+      currentMonitoringMethod: $currentMonitoringMethod
+      flowMonitoringValue: $flowMonitoringValue
+      currentMonitoringValue: $currentMonitoringValue
+    ) {
+      id
+    }
+  }
+`;
+
 export const SET_BASELINE_VALUES_MUTATION = /* GraphQL */ `
   mutation SetBaselineValues(
     $zoneId: Int!

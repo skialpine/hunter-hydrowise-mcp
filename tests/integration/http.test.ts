@@ -133,6 +133,7 @@ describe('streamable HTTP transport', () => {
         'get_seasonal_adjustments',
         'get_watering_triggers',
         'update_zone_settings',
+        'update_zone_standard',
         'set_zone_baseline',
         'update_seasonal_adjustments',
         'update_watering_triggers',

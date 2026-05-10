@@ -207,6 +207,32 @@ describe('snapshot _restore_recipe round-trip', () => {
     expect(missing).toEqual([]);
   });
 
+  it('STANDARD-mode snapshot emits update_zone_standard (not update_zone_settings) for zone steps', async () => {
+    const app = makeApp();
+    const sid = await initSession(app);
+    const dumpResp = await callTool(app, sid, 'dump_controller_snapshot', { controller_id: 317416 });
+    const snap = JSON.parse(dumpResp.result!.content[0]!.text) as {
+      controller: { program_mode: string };
+      _restore_recipe: Array<{ tool: string; args: Record<string, unknown> }>;
+    };
+
+    expect(snap.controller.program_mode).toBe('STANDARD');
+
+    const zoneSteps = snap._restore_recipe.filter((s) => s.tool === 'update_zone_standard');
+    const advancedZoneSteps = snap._restore_recipe.filter((s) => s.tool === 'update_zone_settings');
+
+    expect(zoneSteps.length).toBeGreaterThan(0);
+    expect(advancedZoneSteps).toHaveLength(0);
+
+    // STANDARD-mode zone args must not include ADVANCED-only fields.
+    for (const step of zoneSteps) {
+      expect(step.args).not.toHaveProperty('watering_mode');
+      expect(step.args).not.toHaveProperty('watering_type');
+      expect(step.args).not.toHaveProperty('watering_frequency_mode');
+      expect(step.args).not.toHaveProperty('schedule_adjustment_ids');
+    }
+  });
+
   it('controller-level prereq steps round-trip via preview: true with matching args', async () => {
     const app = makeApp();
     const sid = await initSession(app);

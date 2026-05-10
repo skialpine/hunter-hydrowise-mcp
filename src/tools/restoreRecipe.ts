@@ -487,44 +487,74 @@ export function buildRestoreRecipe(snapshot: SnapshotForRecipe): RestoreStep[] {
   for (const zone of c.zones) {
     if (!zone.settings) continue;
     const s = zone.settings;
-    push(
-      'update_zone_settings',
-      {
-        zone_id: s.zone_id,
-        name: s.name,
-        number: s.number,
-        icon: s.icon,
-        // Many of these are null in the snapshot (read schema doesn't expose them).
-        // The AI must merge with live state before applying — see _caveats and notes.
-        watering_mode: s.watering_mode,
-        global_master_valve: s.global_master_valve,
-        schedule_adjustment_ids: s.schedule_adjustment_ids ?? [],
-        watering_adjustment_percent: s.watering_adjustment_percent,
-        watering_type: s.watering_type,
-        run_time_minutes: s.run_time_minutes,
-        watering_frequency_mode: s.watering_frequency_mode,
-        fixed_watering_frequency_seconds: s.fixed_watering_frequency_seconds,
-        smart_watering_frequency_seconds: s.smart_watering_frequency_seconds,
-        virtual_solar_sync_watering_frequency_seconds: s.virtual_solar_sync_watering_frequency_seconds,
-        run_next_available_start_time: s.run_next_available_start_time,
-        pre_configured_watering_schedule_id: s.pre_configured_watering_schedule_id,
-        cycle_soak_enable: s.cycle_soak_enable,
-        cycle_custom_time_minutes: s.cycle_custom_time_minutes,
-        soak_custom_time_minutes: s.soak_custom_time_minutes,
-        monthly_adjustment_percents: s.monthly_adjustment_percents,
-        sensor_ids: s.sensor_ids,
-        reusable_schedule: s.reusable_schedule,
-        reusable_schedule_name: s.reusable_schedule_name,
-        flow_monitoring_method: s.flow_monitoring_method,
-        current_monitoring_method: s.current_monitoring_method,
-        flow_monitoring_value: s.flow_monitoring_value,
-        current_monitoring_value: s.current_monitoring_value,
-      },
-      programStepOrders,
+    const unreadableNote =
       s._unreadable_fields.length > 0
         ? `Zone has ${s._unreadable_fields.length} unreadable fields (${s._unreadable_fields.join(', ')}); the args above contain nulls for them. The AI must read live state via get_zone_settings, merge non-null snapshot values over live values, and pass the merged payload — applying the recipe args verbatim will fail Zod validation on the required fields.`
-        : undefined,
-    );
+        : undefined;
+
+    if (c.program_mode === 'STANDARD') {
+      // STANDARD-mode: use update_zone_standard (safe subset of fields; no ADVANCED-only args).
+      push(
+        'update_zone_standard',
+        {
+          zone_id: s.zone_id,
+          name: s.name,
+          number: s.number,
+          icon: s.icon,
+          // global_master_valve is not readable — null here; AI must merge from live state.
+          global_master_valve: s.global_master_valve,
+          watering_adjustment_percent: s.watering_adjustment_percent,
+          cycle_soak_enable: s.cycle_soak_enable,
+          cycle_custom_time_minutes: s.cycle_custom_time_minutes,
+          soak_custom_time_minutes: s.soak_custom_time_minutes,
+          sensor_ids: s.sensor_ids,
+          flow_monitoring_method: s.flow_monitoring_method,
+          current_monitoring_method: s.current_monitoring_method,
+          flow_monitoring_value: s.flow_monitoring_value,
+          current_monitoring_value: s.current_monitoring_value,
+        },
+        programStepOrders,
+        unreadableNote,
+      );
+    } else {
+      // ADVANCED-mode or unknown: use update_zone_settings (full updateZoneAdvanced payload).
+      push(
+        'update_zone_settings',
+        {
+          zone_id: s.zone_id,
+          name: s.name,
+          number: s.number,
+          icon: s.icon,
+          // Many of these are null in the snapshot (read schema doesn't expose them).
+          // The AI must merge with live state before applying — see _caveats and notes.
+          watering_mode: s.watering_mode,
+          global_master_valve: s.global_master_valve,
+          schedule_adjustment_ids: s.schedule_adjustment_ids ?? [],
+          watering_adjustment_percent: s.watering_adjustment_percent,
+          watering_type: s.watering_type,
+          run_time_minutes: s.run_time_minutes,
+          watering_frequency_mode: s.watering_frequency_mode,
+          fixed_watering_frequency_seconds: s.fixed_watering_frequency_seconds,
+          smart_watering_frequency_seconds: s.smart_watering_frequency_seconds,
+          virtual_solar_sync_watering_frequency_seconds: s.virtual_solar_sync_watering_frequency_seconds,
+          run_next_available_start_time: s.run_next_available_start_time,
+          pre_configured_watering_schedule_id: s.pre_configured_watering_schedule_id,
+          cycle_soak_enable: s.cycle_soak_enable,
+          cycle_custom_time_minutes: s.cycle_custom_time_minutes,
+          soak_custom_time_minutes: s.soak_custom_time_minutes,
+          monthly_adjustment_percents: s.monthly_adjustment_percents,
+          sensor_ids: s.sensor_ids,
+          reusable_schedule: s.reusable_schedule,
+          reusable_schedule_name: s.reusable_schedule_name,
+          flow_monitoring_method: s.flow_monitoring_method,
+          current_monitoring_method: s.current_monitoring_method,
+          flow_monitoring_value: s.flow_monitoring_value,
+          current_monitoring_value: s.current_monitoring_value,
+        },
+        programStepOrders,
+        unreadableNote,
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -635,6 +665,7 @@ export const RECIPE_TOOL_NAMES = [
   'create_sensor',
   'update_standard_program',
   'update_zone_settings',
+  'update_zone_standard',
   'create_program_start_time',
   'create_controller_note',
   'create_zone_note',

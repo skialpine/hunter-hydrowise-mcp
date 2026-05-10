@@ -58,7 +58,7 @@ export const IDENTIFIER_WHITELIST: ReadonlySet<string> = new Set([
   // Identifiers: singular FKs, plural FK arrays, and compound-id arrays
   'id', 'zone_id', 'controller_id', 'program_id', 'sensor_id', 'expander_id',
   'model_id', 'run_time_group_id', 'custom_sensor_type_id', 'customer_id',
-  'pre_configured_watering_schedule_id', 'note_id',
+  'pre_configured_watering_schedule_id', 'note_id', 'icon_file_id',
   'zone_ids', 'sensor_ids', 'schedule_adjustment_ids',
   // ProgramStartTime zone/schedule id arrays ([Int] arrays of ids, not unit-bearing values)
   'zones', 'schedules',

@@ -8,6 +8,7 @@ import {
   PROGRAM_TYPES,
   WATERING_PROGRAM_TYPES,
   type WateringProgramWritable,
+  type ZoneStandardUpdateInput,
 } from '../hydrawise/queries.js';
 import {
   serializeAdvancedProgram,
@@ -55,6 +56,27 @@ const ZoneWritableShape = {
   current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
   flow_monitoring_value: z.number().nullable().optional().describe('Flow monitoring baseline, in account-preferred units (updateZoneAdvanced.flowMonitoringValue Float).'),
   current_monitoring_value: z.number().int().nullable().optional().describe('Current monitoring baseline, in account-preferred units (updateZoneAdvanced.currentMonitoringValue Int).'),
+  preview: z.boolean().optional(),
+};
+
+// Fields for updateZoneStandard — STANDARD-mode controllers only. Omits all ADVANCED-mode-only
+// fields (watering_mode, watering_type, watering_frequency_mode, schedule_adjustment_ids, etc.).
+export const ZoneStandardShape = {
+  zone_id: z.number().int(),
+  name: z.string(),
+  number: z.number().int(),
+  global_master_valve: z.number().int().describe('Master valve override: -1 = controller default, 0 = always disabled, N = zone N is master (updateZoneStandard.globalMasterValve Int).'),
+  watering_adjustment_percent: z.number().int().describe('Zone-level watering adjustment, in percent (updateZoneStandard.wateringAdjustment Int).'),
+  cycle_soak_enable: z.boolean(),
+  icon: z.number().int().nullable().optional(),
+  icon_file_id: z.number().int().nullable().optional(),
+  cycle_custom_time_minutes: z.number().int().nullable().optional().describe('Cycle duration for cycle-and-soak, in minutes (updateZoneStandard.cycleCustomTime Int).'),
+  soak_custom_time_minutes: z.number().int().nullable().optional().describe('Soak duration for cycle-and-soak, in minutes (updateZoneStandard.soakCustomTime Int).'),
+  sensor_ids: z.array(z.number().int()).nullable().optional(),
+  flow_monitoring_method: MonitoringMethodEnum.nullable().optional(),
+  current_monitoring_method: MonitoringMethodEnum.nullable().optional(),
+  flow_monitoring_value: z.number().nullable().optional().describe('Flow monitoring baseline, in account-preferred units (updateZoneStandard.flowMonitoringValue Float).'),
+  current_monitoring_value: z.number().int().nullable().optional().describe('Current monitoring baseline, in account-preferred units (updateZoneStandard.currentMonitoringValue Int).'),
   preview: z.boolean().optional(),
 };
 
@@ -351,7 +373,7 @@ export function registerSchedulingTools(
   server.registerTool(
     'update_zone_settings',
     {
-      description: `${PHYSICAL} apply a full writable zone payload (see \`get_zone_settings\` for shape) via the \`updateZoneAdvanced\` mutation. Includes the four optional monitoring fields (\`flow_monitoring_method\`, \`current_monitoring_method\`, \`flow_monitoring_value\`, \`current_monitoring_value\`). Pass \`preview: true\` to see what would be sent without dispatching.`,
+      description: `${PHYSICAL} apply a full writable zone payload via the \`updateZoneAdvanced\` mutation. **For ADVANCED-mode controllers only** — use \`update_zone_standard\` for STANDARD-mode controllers to avoid accidental mode changes. Includes the four optional monitoring fields (\`flow_monitoring_method\`, \`current_monitoring_method\`, \`flow_monitoring_value\`, \`current_monitoring_value\`). Pass \`preview: true\` to see what would be sent without dispatching.`,
       inputSchema: ZoneWritableShape,
     },
     async (input) =>
@@ -389,6 +411,38 @@ export function registerSchedulingTools(
         };
         return previewOrApply('updateZoneAdvanced', payload, preview, async () =>
           api.updateZoneAdvanced(payload),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'update_zone_standard',
+    {
+      description: `${PHYSICAL} update per-zone settings on a **STANDARD-mode controller** via the \`updateZoneStandard\` mutation. Use this instead of \`update_zone_settings\` on STANDARD-mode controllers to avoid accidental mode changes. Covers name, number, icon, cycle/soak, watering adjustment, master valve override, sensor associations, and flow/current monitoring baselines. Pass \`preview: true\` to see what would be sent without dispatching.`,
+      inputSchema: ZoneStandardShape,
+    },
+    async (input) =>
+      wrap('update_zone_standard', async () => {
+        const { preview, ...partial } = input;
+        const payload: ZoneStandardUpdateInput = {
+          zone_id: partial.zone_id,
+          name: partial.name,
+          number: partial.number,
+          global_master_valve: partial.global_master_valve,
+          watering_adjustment_percent: partial.watering_adjustment_percent,
+          cycle_soak_enable: partial.cycle_soak_enable,
+          icon: partial.icon ?? null,
+          icon_file_id: partial.icon_file_id ?? null,
+          cycle_custom_time_minutes: partial.cycle_custom_time_minutes ?? null,
+          soak_custom_time_minutes: partial.soak_custom_time_minutes ?? null,
+          sensor_ids: partial.sensor_ids ?? null,
+          flow_monitoring_method: partial.flow_monitoring_method ?? null,
+          current_monitoring_method: partial.current_monitoring_method ?? null,
+          flow_monitoring_value: partial.flow_monitoring_value ?? null,
+          current_monitoring_value: partial.current_monitoring_value ?? null,
+        };
+        return previewOrApply('updateZoneStandard', payload, preview, async () =>
+          api.updateZoneStandard(payload),
         );
       }),
   );

@@ -320,9 +320,10 @@ describe('buildRestoreRecipe — programs and zones', () => {
     expect(recipe.map((s) => s.tool)).not.toContain('update_advanced_program');
   });
 
-  it('emits update_zone_settings for each zone with zone settings, depending on prior program steps', () => {
+  it('emits update_zone_standard (not update_zone_settings) for STANDARD-mode zones, depending on prior program steps', () => {
     const recipe = buildRestoreRecipe(
       makeMinimalSnapshot({
+        program_mode: 'STANDARD',
         programs: [
           {
             id: 100,
@@ -376,17 +377,74 @@ describe('buildRestoreRecipe — programs and zones', () => {
               sensor_ids: null,
               reusable_schedule: null,
               reusable_schedule_name: null,
-              _unreadable_fields: ['watering_mode', 'global_master_valve'],
+              _unreadable_fields: ['global_master_valve'],
             },
           },
         ],
       }),
     );
     const programStep = recipe.find((s) => s.tool === 'update_standard_program');
-    const zoneStep = recipe.find((s) => s.tool === 'update_zone_settings');
+    const zoneStep = recipe.find((s) => s.tool === 'update_zone_standard');
     expect(zoneStep).toBeDefined();
     expect(zoneStep!.depends_on).toContain(programStep!.order);
     expect(zoneStep!.notes).toMatch(/unreadable fields/);
+    // ADVANCED-only fields must not appear in the STANDARD-mode step args
+    expect(zoneStep!.args).not.toHaveProperty('watering_mode');
+    expect(zoneStep!.args).not.toHaveProperty('watering_type');
+    expect(zoneStep!.args).not.toHaveProperty('watering_frequency_mode');
+    expect(zoneStep!.args).not.toHaveProperty('schedule_adjustment_ids');
+  });
+
+  it('emits update_zone_settings for ADVANCED-mode zones', () => {
+    const recipe = buildRestoreRecipe(
+      makeMinimalSnapshot({
+        program_mode: 'ADVANCED',
+        zones: [
+          {
+            id: 200,
+            name: 'Back Garden',
+            number: 2,
+            program_start_times: [],
+            settings: {
+              zone_id: 200,
+              name: 'Back Garden',
+              number: 2,
+              icon: null,
+              master_valve_override: -1,
+              watering_adjustment_percent: 100,
+              cycle_soak_enable: false,
+              cycle_custom_time_minutes: null,
+              soak_custom_time_minutes: null,
+              flow_monitoring_method: null,
+              current_monitoring_method: null,
+              flow_monitoring_value: null,
+              current_monitoring_value: null,
+              watering_mode: null,
+              global_master_valve: null,
+              schedule_adjustment_ids: null,
+              watering_type: null,
+              run_time_minutes: null,
+              watering_frequency_mode: null,
+              fixed_watering_frequency_seconds: null,
+              smart_watering_frequency_seconds: null,
+              virtual_solar_sync_watering_frequency_seconds: null,
+              run_next_available_start_time: null,
+              pre_configured_watering_schedule_id: null,
+              monthly_adjustment_percents: null,
+              sensor_ids: null,
+              reusable_schedule: null,
+              reusable_schedule_name: null,
+              _unreadable_fields: ['watering_mode', 'global_master_valve', 'watering_type', 'watering_frequency_mode'],
+            },
+          },
+        ],
+      }),
+    );
+    const zoneStep = recipe.find((s) => s.tool === 'update_zone_settings');
+    expect(zoneStep).toBeDefined();
+    expect(zoneStep!.args).toHaveProperty('watering_mode');
+    expect(zoneStep!.args).toHaveProperty('watering_type');
+    expect(recipe.map((s) => s.tool)).not.toContain('update_zone_standard');
   });
 });
 
@@ -757,7 +815,8 @@ describe('RECIPE_TOOL_NAMES', () => {
     expect(emittedTools).toContain('create_custom_sensor_type');
     expect(emittedTools).toContain('create_sensor');
     expect(emittedTools).toContain('update_standard_program');
-    expect(emittedTools).toContain('update_zone_settings');
+    // STANDARD-mode fixture emits update_zone_standard (not update_zone_settings)
+    expect(emittedTools).toContain('update_zone_standard');
     expect(emittedTools).toContain('create_program_start_time');
     expect(emittedTools).toContain('create_controller_note');
     expect(emittedTools).toContain('create_zone_note');
