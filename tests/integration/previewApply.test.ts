@@ -354,7 +354,7 @@ describe('preview/apply contract', () => {
     name: 'Rain',
     model: { id: 12, name: 'Rain Sensor', modeType: 'STOP' as const, mode: 'STOP' as const, active: true, offLevel: null, offTimer: null, delay: 0, divisor: null, flowRate: null, customerId: null, sensorType: 'LEVEL_CLOSED' as const, type: { value: 1, label: 'Hunter Clik' }, category: { id: 1, name: 'Hunter Clik' } },
     input: { number: 1, label: 'SEN-1' },
-    zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    zones: [{ id: 100, name: 'Front Lawn' }],
   };
 
   it('create_sensor preview returns planned variables and does NOT call the API', async () => {

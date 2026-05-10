@@ -418,7 +418,7 @@ describe('HydrawiseApi — sensor reads + mutations', () => {
     name: 'Rain',
     model: { id: 12, name: 'Rain Sensor', modeType: 'STOP', mode: 'STOP', active: true, offLevel: null, offTimer: null, delay: 0, divisor: null, flowRate: null, customerId: null, sensorType: 'LEVEL_CLOSED', type: { value: 1, label: 'Hunter Clik' }, category: { id: 1, name: 'Hunter Clik' } },
     input: { number: 1, label: 'SEN-1' },
-    zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+    zones: [{ id: 100, name: 'Front Lawn' }],
   };
 
   it('getControllerSensors throws HydrawiseNotFoundError when controller is null', async () => {

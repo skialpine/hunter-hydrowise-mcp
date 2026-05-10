@@ -356,7 +356,7 @@ describe('dump_controller_snapshot v3', () => {
       },
       input: { number: 1, label: 'SEN-1' },
       // fakeZone in this file is id: 100 — the sensor guards that zone, so we expect a cross-ref.
-      zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+      zones: [{ id: 100, name: 'Front Lawn' }],
     };
     const app = makeApp({ getControllerSensors: async () => [fakeRainSensor] });
     const resp = await callTool(app, 'dump_controller_snapshot', { controller_id: 317416 });

@@ -24,6 +24,12 @@ import { jsonResult, runTool } from './_helpers.js';
 export const SNAPSHOT_VERSION = 3;
 const PACKAGE_VERSION = '0.3.0';
 
+// The runtime `snapshot_version` field is the version contract — the type alias is NOT.
+// Don't add a `ControllerSnapshotV<old>` alias on a version bump: an alias of the new
+// type to an old name doesn't preserve old callers' invariants (it gives them the new
+// shape under the old name), and the next bump that actually drops a field would
+// silently break consumers reading the dropped key. Bump SNAPSHOT_VERSION + this
+// interface together; consumers gate behavior on the runtime number.
 export interface ControllerSnapshotV3 {
   snapshot_version: typeof SNAPSHOT_VERSION;
   captured_at: string;
@@ -37,10 +43,6 @@ export interface ControllerSnapshotV3 {
     sensors: Array<Record<string, unknown>>;
   };
 }
-
-// Backward-compatible alias for callers still importing the previous version's type name.
-// New code should use ControllerSnapshotV3.
-export type ControllerSnapshotV2 = ControllerSnapshotV3;
 
 const Input = { controller_id: z.number().int() };
 

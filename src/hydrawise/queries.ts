@@ -1797,8 +1797,10 @@ export interface ZoneCreatePayload {
 // =============================================================================
 // Sensors (irrigation-sensors capability)
 // =============================================================================
-// Hydrawise schema reference (live SDL):
+// Hydrawise schema reference — fields used by THIS module (live SDL has more):
 //   type Sensor { id, name, model: SensorModel!, input: SensorInput!, zones: [Zone] }
+//     // NOT used here: status: SensorStatus! (telemetry, excluded from backup),
+//     //                flowSummary(start, end) (deprecated upstream).
 //   type SensorModel { id, name, modeType: CustomSensorModeTypeEnum!, mode: CustomSensorModeTypeEnum!,
 //                      active, offLevel, offTimer, delay, divisor, flowRate, customerId,
 //                      sensorType: CustomSensorTypeEnum, type: SelectedOption!,
@@ -1811,8 +1813,20 @@ export interface ZoneCreatePayload {
 // query (`configuration { sensorCategories { id, name, models { ... } } }`), NOT under
 // Controller. Built-in models live there alongside customer-created custom types.
 
-export type CustomSensorModeType = 'START' | 'STOP' | 'REPORT';
-export type CustomSensorTypeEnum = 'LEVEL_OPEN' | 'LEVEL_CLOSED' | 'FLOW' | 'THRESHOLD';
+// Single source of truth for the two sensor enums. The runtime tuples are exported
+// so the MCP tool layer (Zod) can `z.enum(CUSTOM_SENSOR_TYPES)` against the same
+// list — adding a value here updates both the TS literal union and the Zod enum
+// atomically. See the NOTE_TYPES pattern in api.ts for the same idiom.
+export const CUSTOM_SENSOR_MODE_TYPES = ['START', 'STOP', 'REPORT'] as const;
+export type CustomSensorModeType = (typeof CUSTOM_SENSOR_MODE_TYPES)[number];
+
+export const CUSTOM_SENSOR_TYPES = [
+  'LEVEL_OPEN',
+  'LEVEL_CLOSED',
+  'FLOW',
+  'THRESHOLD',
+] as const;
+export type CustomSensorTypeEnum = (typeof CUSTOM_SENSOR_TYPES)[number];
 
 export interface SensorInputRead {
   number: number;
@@ -1832,15 +1846,19 @@ export interface SensorModelRead {
   flowRate: number | null;
   customerId: number | null;
   sensorType: CustomSensorTypeEnum | null;
-  type: { value: number; label: string | null } | null;
+  // `type: SelectedOption!` per the live schema (line 367) — non-null. The serializer
+  // still uses optional chaining defensively when extracting `.label`, which is fine
+  // (label IS nullable inside the SelectedOption), but the wrapper itself is guaranteed.
+  type: { value: number; label: string | null };
   category: { id: number; name: string } | null;
 }
 
-// Per-zone reference embedded inside Sensor.zones — minimal shape (id/number/name)
-// to support per-zone cross-references in the snapshot without re-fetching full Zone.
+// Per-zone reference embedded inside Sensor.zones — only the fields the serializers
+// actually consume (id for zone_ids, name for the per-zone cross-reference). Zone
+// numbers can be looked up via getZones if a future consumer needs them; selecting
+// them here would just bloat the wire payload.
 export interface SensorZoneRef {
   id: number;
-  number: { value: number };
   name: string;
 }
 
@@ -1902,9 +1920,6 @@ export const CONTROLLER_SENSORS_QUERY = /* GraphQL */ `
         }
         zones {
           id
-          number {
-            value
-          }
           name
         }
       }
@@ -1966,9 +1981,6 @@ const SENSOR_RETURN_FIELDS = /* GraphQL */ `
   }
   zones {
     id
-    number {
-      value
-    }
     name
   }
 `;

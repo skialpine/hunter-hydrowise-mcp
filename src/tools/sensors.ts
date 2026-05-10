@@ -1,22 +1,18 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { HydrawiseApi } from '../hydrawise/api.js';
+import { CUSTOM_SENSOR_MODE_TYPES, CUSTOM_SENSOR_TYPES } from '../hydrawise/queries.js';
 import type { Logger } from '../logger.js';
 import { serializeSensor, serializeSensorModel } from './serializers.js';
 import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
 
-// CustomSensorTypeEnum / CustomSensorModeTypeEnum mirror src/hydrawise/queries.ts —
-// kept in sync by hand because Zod enums must be inline for the input-schema framework
-// to materialise the shape, and the GraphQL enum strings are part of the wire contract.
-const CustomSensorTypeEnumZ = z.enum([
-  'LEVEL_OPEN',
-  'LEVEL_CLOSED',
-  'FLOW',
-  'THRESHOLD',
-] as const);
-const CustomSensorModeTypeEnumZ = z.enum(['START', 'STOP', 'REPORT'] as const);
+// Zod enums derived from the runtime tuples in queries.ts — single source of truth.
+// Adding a new value to CUSTOM_SENSOR_TYPES / CUSTOM_SENSOR_MODE_TYPES propagates to
+// both the TS literal union and the Zod runtime check; the two cannot drift.
+const CustomSensorTypeEnumZ = z.enum(CUSTOM_SENSOR_TYPES);
+const CustomSensorModeTypeEnumZ = z.enum(CUSTOM_SENSOR_MODE_TYPES);
 
 const ListSensorsInput = { controller_id: z.number().int() };
 const ListZoneSensorsInput = { zone_id: z.number().int() };

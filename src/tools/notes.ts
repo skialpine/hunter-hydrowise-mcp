@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { NOTE_TYPES } from '../hydrawise/api.js';
 import type { HydrawiseApi } from '../hydrawise/api.js';
 import type { Logger } from '../logger.js';
 import { nonNull, serializeNote } from './serializers.js';
@@ -7,7 +8,10 @@ import { jsonResult, previewOrApply, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
 
-const NoteTypeEnum = z.enum(['fault', 'location', 'repair', 'comment'] as const);
+// Zod enum derived from NOTE_TYPES in api.ts — single source of truth.
+// Adding a value to NOTE_TYPES propagates to NoteType, isNoteType, and this Zod
+// schema simultaneously; the three cannot drift.
+const NoteTypeEnum = z.enum(NOTE_TYPES);
 
 const ListControllerNotesInput = { controller_id: z.number().int() };
 const ListZoneNotesInput = { zone_id: z.number().int() };

@@ -351,8 +351,8 @@ const fakeRainSensor: SensorRead = {
   model: fakeRainSensorModel,
   input: { number: 1, label: 'SEN-1' },
   zones: [
-    { id: 100, number: { value: 1 }, name: 'Front Lawn' },
-    { id: 101, number: { value: 2 }, name: 'Back Lawn' },
+    { id: 100, name: 'Front Lawn' },
+    { id: 101, name: 'Back Lawn' },
   ],
 };
 
@@ -386,7 +386,8 @@ describe('serializeSensor', () => {
     const out = serializeSensor({
       ...fakeRainSensor,
       zones: null,
-      model: { ...fakeRainSensorModel, category: null, type: null },
+      // SelectedOption.label IS nullable (the wrapper isn't); model.category IS nullable.
+      model: { ...fakeRainSensorModel, category: null, type: { value: 1, label: null } },
     });
     expect(out.zone_ids).toEqual([]);
     const observed = out._observed as { category: unknown; type_label: unknown };
@@ -398,9 +399,9 @@ describe('serializeSensor', () => {
     const out = serializeSensor({
       ...fakeRainSensor,
       zones: [
-        { id: 100, number: { value: 1 }, name: 'Front Lawn' },
+        { id: 100, name: 'Front Lawn' },
         null,
-        { id: 102, number: { value: 3 }, name: 'Side' },
+        { id: 102, name: 'Side' },
       ],
     });
     expect(out.zone_ids).toEqual([100, 102]);
@@ -447,7 +448,7 @@ describe('serializeSensorZoneRefsForZone', () => {
       ...fakeRainSensor,
       id: 5002,
       name: 'Soil',
-      zones: [{ id: 100, number: { value: 1 }, name: 'Front Lawn' }],
+      zones: [{ id: 100, name: 'Front Lawn' }],
     };
     const out = serializeSensorZoneRefsForZone([fakeRainSensor, second], 100);
     expect(out).toEqual([

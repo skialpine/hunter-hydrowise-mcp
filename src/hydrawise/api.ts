@@ -104,10 +104,11 @@ import {
 export type ControllerProgramMode = 'STANDARD' | 'ADVANCED';
 
 // Single source of truth for note types: the runtime constant drives the
-// compile-time union via `typeof NOTE_TYPES[number]`. Adding a new note type
-// here automatically updates both the literal union and the runtime guard
-// below — the two cannot drift.
-const NOTE_TYPES = ['fault', 'location', 'repair', 'comment'] as const;
+// compile-time union via `typeof NOTE_TYPES[number]`. Exported so the MCP tool
+// layer (Zod) can `z.enum(NOTE_TYPES)` against the same list — adding a new note
+// type here updates the literal union, the runtime guard below, AND the
+// boundary-validation schema atomically.
+export const NOTE_TYPES = ['fault', 'location', 'repair', 'comment'] as const;
 export type NoteType = (typeof NOTE_TYPES)[number];
 
 export interface UpdateLocationPayload {

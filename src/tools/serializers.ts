@@ -368,7 +368,9 @@ export function serializeSensor(s: SensorRead): Record<string, unknown> {
       delay: s.model.delay,
       active: s.model.active,
       input_label: s.input.label,
-      type_label: s.model.type?.label ?? null,
+      // SelectedOption wrapper is non-null per schema (SensorModel.type: SelectedOption!),
+      // but the inner label IS nullable.
+      type_label: s.model.type.label,
       category: s.model.category ? { id: s.model.category.id, name: s.model.category.name } : null,
       // customerId on the model is the tell for "this is a custom (account-owned) type" vs.
       // built-in (null/0). Restore needs this signal to know whether to recreate the type first.
