@@ -283,7 +283,6 @@ describe('serializeStandardProgram', () => {
       ignoreRainSensor: false,
       daysRun: ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
       standardProgramDayPattern: 'interval',
-      dayPattern: null,
       periodicity: { period: 2, seriesStart: { timestamp: 1750914000 } },
       timeRange: { validFrom: null, validTo: null },
       conditionalWateringAdjustments: [{ id: 17, label: 'Vacation' }],
@@ -300,6 +299,8 @@ describe('serializeStandardProgram', () => {
     expect(out.program_type).toBe('Standard');
     expect(out.start_times).toEqual(['22:00']);
     expect(out.days_run).toHaveLength(7);
+    // interval mode → day_pattern is null (only populated for 'dow' mode)
+    expect(out.day_pattern).toBeNull();
     expect(out.periodicity).toEqual({ period: 2, series_start_epoch_seconds: 1750914000 });
     expect(out.valid_from_epoch_seconds).toBeNull();
     expect(out.valid_to_epoch_seconds).toBeNull();
@@ -307,6 +308,49 @@ describe('serializeStandardProgram', () => {
     expect(out.per_zone_run_times).toEqual([
       { zone_id: 100, zone_number: 1, run_time_group_id: 200, run_time_group_name: null, duration_minutes: 10 },
     ]);
+  });
+
+  it('derives day_pattern bitmap from daysRun for dow mode', () => {
+    const p: StandardProgramRead = {
+      __typename: 'StandardProgram',
+      id: 1,
+      name: 'DOW test',
+      appliesToZones: [],
+      schedulingMethod: null,
+      monthlyWateringAdjustments: [],
+      startTimes: [],
+      ignoreRainSensor: false,
+      daysRun: ['WEDNESDAY', 'SATURDAY'],
+      standardProgramDayPattern: 'dow',
+      periodicity: null,
+      timeRange: { validFrom: null, validTo: null },
+      conditionalWateringAdjustments: [],
+      applications: [],
+    };
+    const out = serializeStandardProgram(p);
+    // SMTWTFS: Wed=pos3, Sat=pos6 → "0001001"
+    expect(out.day_pattern).toBe('0001001');
+  });
+
+  it('produces all-zeros bitmap for dow mode with empty daysRun', () => {
+    const p: StandardProgramRead = {
+      __typename: 'StandardProgram',
+      id: 2,
+      name: 'empty days',
+      appliesToZones: [],
+      schedulingMethod: null,
+      monthlyWateringAdjustments: [],
+      startTimes: [],
+      ignoreRainSensor: false,
+      daysRun: [],
+      standardProgramDayPattern: 'dow',
+      periodicity: null,
+      timeRange: { validFrom: null, validTo: null },
+      conditionalWateringAdjustments: [],
+      applications: [],
+    };
+    const out = serializeStandardProgram(p);
+    expect(out.day_pattern).toBe('0000000');
   });
 });
 
