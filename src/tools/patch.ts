@@ -6,11 +6,31 @@ import type { Logger } from '../logger.js';
 import type {
   StandardProgramRead,
   StandardProgramWritable,
+  ZoneRichRead,
   ZoneStandardUpdateInput,
 } from '../hydrawise/queries.js';
 import { jsonResult, runTool } from './_helpers.js';
 
 const PHYSICAL = 'PHYSICAL ACTION:';
+
+// Returns the icon-routing fields for a ZoneStandardUpdateInput.
+// Zones with a custom uploaded image route to icon_file_id; built-in icon templates use icon.
+// Throws ConfigError when the zone has no icon at all (upstream rejects icon: null).
+function extractIconFields(
+  zone: ZoneRichRead,
+  zone_id: number,
+): Pick<ZoneStandardUpdateInput, 'icon' | 'icon_file_id'> {
+  if (zone.icon == null) {
+    throw new ConfigError(
+      `zone ${zone_id} has no icon in the read response; cannot call updateZoneStandard ` +
+        `(icon is required upstream). Use update_zone_standard and supply the icon id explicitly.`,
+    );
+  }
+  if (zone.icon.customImage != null) {
+    return { icon: null, icon_file_id: zone.icon.customImage.id };
+  }
+  return { icon: zone.icon.id, icon_file_id: null };
+}
 
 const DAY_ORDER = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
 
@@ -284,13 +304,7 @@ export function registerPatchTools(
               `Use update_zone_settings for ADVANCED-mode controllers.`,
           );
         }
-        const iconId = zone.icon?.id;
-        if (iconId == null) {
-          throw new ConfigError(
-            `zone ${zone_id} has no icon id in the read response; cannot call updateZoneStandard ` +
-              `(icon is required upstream). Use update_zone_standard and supply the icon id explicitly.`,
-          );
-        }
+        const iconFields = extractIconFields(zone, zone_id);
         const ws = zone.wateringSettings;
         const before = {
           cycle_soak_enable: ws ? ws.cycleAndSoakSettings != null : false,
@@ -317,7 +331,7 @@ export function registerPatchTools(
           global_master_valve: zone.masterValve,
           watering_adjustment_percent: ws?.fixedWateringAdjustment ?? 100,
           cycle_soak_enable,
-          icon: iconId,
+          ...iconFields,
           cycle_custom_time_minutes: resolvedCycleMinutes ?? null,
           soak_custom_time_minutes: resolvedSoakMinutes ?? null,
         };
@@ -366,13 +380,7 @@ export function registerPatchTools(
               `Use update_zone_settings for ADVANCED-mode controllers.`,
           );
         }
-        const iconId = zone.icon?.id;
-        if (iconId == null) {
-          throw new ConfigError(
-            `zone ${zone_id} has no icon id in the read response; cannot call updateZoneStandard ` +
-              `(icon is required upstream). Use update_zone_standard and supply the icon id explicitly.`,
-          );
-        }
+        const iconFields = extractIconFields(zone, zone_id);
         const ws = zone.wateringSettings;
         const before = { watering_adjustment_percent: ws?.fixedWateringAdjustment ?? null };
         const after = { watering_adjustment_percent };
@@ -383,7 +391,7 @@ export function registerPatchTools(
           global_master_valve: zone.masterValve,
           watering_adjustment_percent,
           cycle_soak_enable: ws ? ws.cycleAndSoakSettings != null : false,
-          icon: iconId,
+          ...iconFields,
           cycle_custom_time_minutes: ws?.cycleAndSoakSettings?.cycleDuration ?? null,
           soak_custom_time_minutes: ws?.cycleAndSoakSettings?.soakDuration ?? null,
         };

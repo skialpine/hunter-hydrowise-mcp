@@ -563,7 +563,7 @@ export interface ZoneRichRead {
   id: number;
   name: string;
   number: { value: number };
-  icon: { id: number | null } | null;
+  icon: { id: number | null; customImage?: { id: number | null } | null } | null;
   // -1 = follow controller-global master valve; 0 = always disabled; else specific zone number.
   masterValve: number;
   wateringSettings: {
@@ -649,6 +649,9 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
       }
       icon {
         id
+        customImage {
+          id
+        }
       }
       masterValve
       wateringSettings {
@@ -1078,7 +1081,7 @@ export interface ZoneStandardUpdateInput {
   global_master_valve: number;
   watering_adjustment_percent: number;
   cycle_soak_enable: boolean;
-  icon: number;
+  icon: number | null;
   icon_file_id?: number | null;
   cycle_custom_time_minutes?: number | null;
   soak_custom_time_minutes?: number | null;

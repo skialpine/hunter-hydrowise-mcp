@@ -118,15 +118,27 @@ describe('ZoneStandardShape', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects when icon is missing', () => {
+  it('accepts payload with icon_file_id but no icon (custom uploaded image)', () => {
     const { icon: _icon, ...withoutIcon } = validStandardPayload;
-    const result = ZoneStandardSchema.safeParse(withoutIcon);
-    expect(result.success).toBe(false);
+    const result = ZoneStandardSchema.safeParse({ ...withoutIcon, icon_file_id: 890232 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.icon).toBeUndefined();
+      expect(result.data.icon_file_id).toBe(890232);
+    }
   });
 
-  it('rejects when icon is null', () => {
-    const result = ZoneStandardSchema.safeParse({ ...validStandardPayload, icon: null });
-    expect(result.success).toBe(false);
+  it('accepts icon: null with icon_file_id set (custom uploaded image routing)', () => {
+    const result = ZoneStandardSchema.safeParse({
+      ...validStandardPayload,
+      icon: null,
+      icon_file_id: 890232,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.icon).toBeNull();
+      expect(result.data.icon_file_id).toBe(890232);
+    }
   });
 
   it('preview mode returns operation name updateZoneStandard without calling apply', async () => {

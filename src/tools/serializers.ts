@@ -241,7 +241,11 @@ export function serializeZoneSettings(zone: ZoneRichRead): Record<string, unknow
     zone_id: zone.id,
     name: zone.name,
     number: zone.number.value,
-    icon: zone.icon?.id ?? null,
+    // Zones using a custom uploaded image expose icon.customImage; those using a built-in
+    // icon template have icon.customImage == null and icon.id is the template ID.
+    // Route accordingly so update_zone_standard receives the right field.
+    icon: zone.icon?.customImage != null ? null : (zone.icon?.id ?? null),
+    icon_file_id: zone.icon?.customImage?.id ?? null,
     // -1 = global, 0 = always disabled, else specific zone number.
     master_valve_override: zone.masterValve,
     watering_adjustment_percent: ws?.fixedWateringAdjustment ?? null,

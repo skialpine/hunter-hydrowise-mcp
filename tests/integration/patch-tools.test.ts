@@ -124,7 +124,7 @@ const fakeZone = {
   id: 100,
   name: 'Front Lawn',
   number: { value: 1 },
-  icon: { id: 10 },
+  icon: { id: 10, customImage: null },
   masterValve: -1,
   wateringSettings: {
     fixedWateringAdjustment: 100,
@@ -132,6 +132,11 @@ const fakeZone = {
   },
   monitoringSettings: null,
   status: { suspendedUntil: null },
+};
+
+const fakeZoneWithCustomImage = {
+  ...fakeZone,
+  icon: { id: 890232, customImage: { id: 890232 } },
 };
 
 const fakeZoneWithCycleSoak = {
@@ -502,6 +507,29 @@ describe('update_zone_cycle_soak', () => {
     expect(payload.planned_call.variables.icon).toBe(10);
   });
 
+  it('routes icon_file_id (not icon) for zones with custom uploaded images', async () => {
+    let capturedPayload: unknown;
+    const app = makeApp({
+      getZoneFull: async () => fakeZoneWithCustomImage,
+      getController: async () => fakeControllerStandard,
+      updateZoneStandard: async (p) => {
+        capturedPayload = p;
+        return { id: fakeZone.id };
+      },
+    });
+    const resp = await callTool(app, 'update_zone_cycle_soak', {
+      controller_id: 317416,
+      zone_id: 100,
+      cycle_soak_enable: true,
+      cycle_custom_time_minutes: 3,
+      soak_custom_time_minutes: 7,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    const mutated = capturedPayload as { icon: number | null; icon_file_id: number | null };
+    expect(mutated.icon).toBeNull();
+    expect(mutated.icon_file_id).toBe(890232);
+  });
+
   it('returns config_error for ADVANCED-mode controller', async () => {
     const app = makeApp({
       getZoneFull: async () => fakeZone,
@@ -604,6 +632,27 @@ describe('update_zone_watering_adjustment', () => {
       watering_adjustment_percent: 250,
     });
     expect(resp.result?.isError).toBe(true);
+  });
+
+  it('routes icon_file_id (not icon) for zones with custom uploaded images', async () => {
+    let capturedPayload: unknown;
+    const app = makeApp({
+      getZoneFull: async () => fakeZoneWithCustomImage,
+      getController: async () => fakeControllerStandard,
+      updateZoneStandard: async (p) => {
+        capturedPayload = p;
+        return { id: fakeZone.id };
+      },
+    });
+    const resp = await callTool(app, 'update_zone_watering_adjustment', {
+      controller_id: 317416,
+      zone_id: 100,
+      watering_adjustment_percent: 75,
+    });
+    expect(resp.result?.isError).toBeFalsy();
+    const mutated = capturedPayload as { icon: number | null; icon_file_id: number | null };
+    expect(mutated.icon).toBeNull();
+    expect(mutated.icon_file_id).toBe(890232);
   });
 
   it('returns config_error for ADVANCED-mode controller', async () => {
