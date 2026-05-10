@@ -6,7 +6,7 @@ The MCP exposes only past runs (`get_watering_report`, `get_zone_run_history`) �
 
 - New tool `get_zone_scheduled_runs(zone_id, from_epoch_seconds?, until_epoch_seconds?)` — wraps `Zone.runsBetween(from, until)` with a default window of now → now+7d when arguments are omitted. Returns an array of scheduled run objects with start/end/duration normalized per project conventions.
 - New tool `get_zone_next_run(zone_id)` — returns a single next-run summary from `Zone.scheduledRuns.nextRun`. Cheap; useful for status checks.
-- New tool `get_controller_schedule(controller_id, from_epoch_seconds?, until_epoch_seconds?)` — fans out `runsBetween` across all zones on the controller and returns a per-zone timeline. Default window: now → now+7d.
+- New tool `get_controller_schedule(controller_id, from_epoch_seconds?, until_epoch_seconds?)` — fans out `runsBetween` across all zones on the controller and returns an array of `{ zone_id, zone_name, zone_number, runs[] }` objects (one per zone, not a keyed map; every zone appears even if its `runs` array is empty). Default window: now → now+7d.
 - New file `src/tools/schedule-reads.ts` (or added to `status.ts`) containing the three tool handlers.
 - All `ScheduledZoneRun` numeric fields serialized with unit suffixes: `normal_duration_minutes`, `duration_minutes`, `remaining_time_seconds` (units are documented in the live schema).
 

@@ -16,8 +16,9 @@
 
 ## 4. Snapshot
 
-- [ ] 4.1 In `src/tools/restoreRecipe.ts` (NOT `backup.ts`), extend the `SnapshotForRecipe` interface's `controller` block to include `hibernate_status?: boolean | null`. Then update `buildRestoreCaveats()` in the same file to append a hibernation warning string when `snapshot.controller.hibernate_status === true`. Without the interface update, the field will be typed as `never` and the caveat check will silently never fire.
-- [ ] 4.2 Bump `SNAPSHOT_VERSION` from 6 to 7 in `src/tools/backup.ts`. Also rename the `ControllerSnapshotV6` interface (and its two usage sites) to `ControllerSnapshotV7`.
+- [ ] 4.1a In `src/tools/restoreRecipe.ts`, extend the `SnapshotForRecipe` interface's `controller` block to add `hibernate_status?: boolean | null`. This step MUST be done before the caveat check below — without it, TypeScript will produce a compile error on `snapshot.controller.hibernate_status` that an implementer might suppress with a cast, making the caveat silently never fire. Complete this step and verify it compiles before continuing.
+- [ ] 4.1b In `src/tools/restoreRecipe.ts`, update `buildRestoreCaveats()` to append a hibernation warning string when `snapshot.controller.hibernate_status === true`.
+- [ ] 4.2 Bump `SNAPSHOT_VERSION` from 6 to 7 in `src/tools/backup.ts`. Also rename the `ControllerSnapshotV6` interface (and its three usage sites — declaration plus two type annotations) to `ControllerSnapshotV7`.
 - [ ] 4.3 Verify that `dump_controller_snapshot` output contains the new controller header fields (no code changes needed if `serializeController` is called by the snapshot builder; confirm by inspection).
 
 ## 5. Tests

@@ -32,11 +32,11 @@ The server SHALL expose an MCP tool named `get_zone_scheduled_runs` that takes a
 #### Scenario: Zone does not exist or belongs to a different account
 
 - **WHEN** an MCP client calls `get_zone_scheduled_runs` with a `zone_id` that does not exist or does not belong to the authenticated user
-- **THEN** the tool returns an `api_error` (not an empty array)
+- **THEN** the tool returns a `not_found` error (not an empty array)
 
 ### Requirement: get_zone_next_run tool returns the immediately upcoming run for a zone
 
-The server SHALL expose an MCP tool named `get_zone_next_run` that takes a required integer `zone_id` and returns the next scheduled run for that zone, or `null` if no run is scheduled. The returned run object SHALL contain the same fields as entries in `get_zone_scheduled_runs`. The tool SHALL return `null` only when the zone exists and genuinely has no upcoming run — a missing or unauthorized zone SHALL produce an `api_error`.
+The server SHALL expose an MCP tool named `get_zone_next_run` that takes a required integer `zone_id` and returns the next scheduled run for that zone, or `null` if no run is scheduled. The returned run object SHALL contain the same fields as entries in `get_zone_scheduled_runs`. The tool SHALL return `null` only when the zone exists and genuinely has no upcoming run — a missing or unauthorized zone SHALL produce a `not_found` error.
 
 #### Scenario: Zone has a next run
 
@@ -51,7 +51,7 @@ The server SHALL expose an MCP tool named `get_zone_next_run` that takes a requi
 #### Scenario: Zone does not exist or belongs to a different account
 
 - **WHEN** an MCP client calls `get_zone_next_run` with a `zone_id` that does not exist or does not belong to the authenticated user
-- **THEN** the tool returns an `api_error` (not `null`)
+- **THEN** the tool returns a `not_found` error (not `null`)
 
 ### Requirement: get_controller_schedule tool returns a per-zone run timeline for a controller
 
