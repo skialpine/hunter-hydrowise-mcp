@@ -1853,11 +1853,11 @@ export interface SensorModelRead {
   flowRate: number | null;
   customerId: number | null;
   sensorType: CustomSensorTypeEnum | null;
-  // `type: SelectedOption!` per the live schema (line 367) — declared non-null. We type
-  // it as non-null to match the schema contract, but consumers must still access `.label`
-  // defensively (`s.model.type?.label`) because Hydrawise demonstrably lies about `!`
-  // declarations elsewhere — see CLAUDE.md gotcha re `Zone.status.lastRun` returning
-  // null despite `DateTime!`. Inner `.label` is genuinely nullable per the schema.
+  // `SensorModel.type: SelectedOption!` per the live schema — declared non-null. We
+  // type it as non-null to match the schema contract, but consumers must still access
+  // `.label` defensively (`s.model.type?.label`) because Hydrawise demonstrably lies
+  // about `!` declarations elsewhere — see CLAUDE.md gotcha re `Zone.status.lastRun`
+  // returning null despite `DateTime!`. Inner `.label` is genuinely nullable per schema.
   type: { value: number; label: string | null };
   category: { id: number; name: string } | null;
 }
