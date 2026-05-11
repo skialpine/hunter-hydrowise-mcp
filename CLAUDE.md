@@ -319,3 +319,81 @@ HYDRAWISE_USERNAME=... HYDRAWISE_PASSWORD=... npx tsx scripts/probe-schema.ts
 ```
 
 The script also prints what's new (types / mutations / arguments) vs the cached pydrawise schema at `/tmp/hydrawise.graphql`, useful when investigating GUI features the MCP doesn't yet support.
+
+## Operator state — current configuration and monitoring plan
+
+**Owner:** Jeff Heller — single residential install, "Heller Tufts" controller (id 317416) at 6315 E Tufts Ave, Englewood CO. 24-zone Hunter Pro-HC (Hydrawise 724), STANDARD mode. Service area: Denver Water (odd-numbered address → Wed + Sat assigned watering days under Stage 1 drought rules effective 2026).
+
+### Active schedule (last applied 2026-05-10)
+
+| Program | Days | Start | Zones | Notes |
+|---|---|---|---|---|
+| **Lawn** | Tue + Fri | 22:30 | 1, 2, 3, 4, 18, 19, 20, 21, 22 | Starts Tue/Fri PM, runs into Wed/Sat AM. Lenient interpretation of Stage 1 day rule (assigned day is when run completes, not when it starts). |
+| **Lawn Early** | Wed + Sat | 18:30 | 5, 6, 7, 8, 9, 10, 11, 12, 17 | Z9 and Z10 moved here from Lawn — peripheral / low-traffic zones, OK to water in early evening. |
+| **Drip** | Sun-Fri daily (CATCH-UP) | 20:00 | 13, 14, 23, 24 | Temporarily expanded from Sun/Tue/Thu (3 days) to Sun-Fri (6 days) for dry-winter bed catch-up. Drip is Denver Water-exempt from the day-of-week rule. **Revert to "1010100" (Sun/Tue/Thu) around 2026-06-01** when beds recover. |
+
+`day_pattern` values currently set: Lawn `"0010010"`, Lawn Early `"0001001"`, Drip `"1111110"`. Test program `xxx` (id 8621589) is parked in interval mode with no zones.
+
+### Active zone-level adjustments
+
+- **Z21 "Patio Hill" — 30° slope** (literal degrees, confirmed with level): `cycle_custom_time_minutes: 6`, `soak_custom_time_minutes: 50` (down from 15/40 to reduce per-cycle runoff on slope). `watering_adjustment_percent: 100` (briefly bumped to 130 for catch-up on 2026-05-11 then reverted same day — monitoring whether predictive ramps on its own).
+- **Z21 in Lawn program — `run_duration: 30`** (down from 35 — accepted slight reduction in expectation that aerated soil + new cycle/soak absorbs more efficiently).
+- **Z20 "West Side"** — current monitoring baseline locked at 380 mA (was learning indefinitely; matched Z18's pattern of locked-at-382). Cosmetic; doesn't affect scheduling (fault-detection only). Z20's documented over-watering pattern (~30% more cycles than Z18/Z22 peers last summer) **remains unexplained** — no per-zone metadata exists in Hydrawise Standard mode that would distinguish Z20 from peers. Trust-the-engine-and-monitor strategy in effect.
+- **All Lawn / Lawn Early zones**: `watering_adjustment_percent: 100` (no per-zone bias). Predictive expected to ramp up per-session minutes naturally from dry-soil signals over the first 2-3 Wed/Sat cycles.
+
+### Weather station
+
+KAPA (Centennial Airport, ~4-5 miles south) — only the user's free-tier slot is in use. Previously had a Virtual Weather Station (forecast-model-based, centered on the address); switched 2026-05-10 to KAPA for real-measured triggers. Rain sensor (id 132575, wired to SEN-1) remains the local-rainfall ground-truth fallback.
+
+### Owner's water budget posture
+
+- Goal: **match last year's total annual water budget.** NOT chasing the 20% Stage 1 reduction goal — owner has already done major reductions in prior years and has the conservation credits.
+- Catch-up phase: **water MORE now (early-mid May 2026) to recover from dry winter / extreme drought**, then dial back later in summer if cumulative pace trends over last year.
+- Aeration: **already done** for spring 2026. Compost top-dress optional but not pursued.
+
+### Active catch-up plan (2026-05-11, ~3 weeks)
+
+- Daily Drip running Sun-Fri (covers all stressed beds quickly)
+- Z21 cycle/soak optimized for runoff (long-term, not catch-up)
+- All Lawn / Lawn Early zones at 100% — letting predictive ramp on its own
+- **Revert flag**: around 2026-06-01, revert Drip `day_pattern` back to `"1010100"` and reassess whether any zone needs further adjustment
+
+### Monitoring rhythm
+
+User plans to check in **a couple of times a week** to inspect actual runs and adjust. Each check-in:
+
+1. **Pull recent runs.** `get_watering_report` for the prior 2-3 days, OR `get_zone_run_history` for spot-checks. Verify scheduled-vs-actual durations look reasonable.
+2. **Verify day patterns held.** Confirm Lawn ran Tue/Fri night → Wed/Sat AM, Lawn Early ran Wed/Sat 6:30 PM, Drip ran Sun-Fri 8 PM (during catch-up).
+3. **Compute water-savings delta.** `get_water_saving_summary` for the controller, or per-zone via `get_run_summary`. Compare normal vs scheduled minutes to confirm VSS is adjusting.
+4. **Compare to last-year pace.** Once enough data accumulates (mid-June onwards), pull `get_run_summary(zone, MONTH, May 2025)` vs `(zone, MONTH, May 2026)` to see if we're on pace.
+5. **Adjust if needed.** Lawn zones at 100% are the dial — bump to 110-115% globally if predictive isn't ramping enough, or back off if running hot.
+
+### Open questions / watch items
+
+- **Z20 over-watering pattern** — last summer Z20 ran ~30% more cycles than identically-configured peers (Z18, Z22). No GUI-readable per-zone metadata explains it. Predictive's per-zone soil-moisture model has hidden state we can't see. Watch whether the new Wed/Sat schedule + hibernation reset changes the pattern.
+- **Predictive ramp speed** — How quickly does VSS adapt per-session minutes after the day-pattern flip? First Tue-night Lawn run (2026-05-12 22:30) is the first signal. Wed-AM check should reveal whether predictive picked up the new cadence.
+- **Z21 30° slope** — software-only mitigation (6/50 cycle/soak) is best-possible without hardware change. Hardware fix is hardware-rewrite: replace standard rotors with Hunter MP Rotators OR drip-convert the steepest face. Owner has explicitly tabled hardware changes; flagged here so it's not lost.
+
+### Rollback / safety net
+
+Three snapshots on disk that represent meaningful rollback points:
+
+- `snapshots/heller-tufts-317416-2026-05-10T15-52-rollback-z21-cycle-soak.json` — after Z21 cycle/soak change, before day-pattern flip
+- `snapshots/heller-tufts-317416-2026-05-10T16-30-post-mcp-fixes.json` — after MCP enhancements landed, before day-pattern flip (most useful as "pre-redesign" baseline)
+- `snapshots/heller-tufts-317416-2026-05-10T17-03-post-wed-sat-redesign.json` — current desired state (Wed/Sat day pattern active)
+
+To roll back, load any snapshot and run the `restore-irrigation-backup` skill — walks the `_restore_recipe` with preview-then-apply per step.
+
+### Reverting catch-up changes (around 2026-06-01)
+
+When beds have recovered and we want to return to the steady-state schedule:
+
+```
+update_standard_program(
+  program_id: 6390424,  # Drip
+  day_pattern: "1010100",  # back to Sun + Tue + Thu
+  # plus all other current fields preserved (start_times ["20:00"], etc.)
+)
+```
+
+No zone-level revert needed if Z21 stays at 100% adjustment through catch-up.
