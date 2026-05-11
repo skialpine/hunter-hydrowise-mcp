@@ -337,10 +337,10 @@ The script also prints what's new (types / mutations / arguments) vs the cached 
 
 ### Active zone-level adjustments
 
-- **Z21 "Patio Hill" — 30° slope** (literal degrees, confirmed with level): `cycle_custom_time_minutes: 6`, `soak_custom_time_minutes: 50` (down from 15/40 to reduce per-cycle runoff on slope). `watering_adjustment_percent: 100` (briefly bumped to 130 for catch-up on 2026-05-11 then reverted same day — monitoring whether predictive ramps on its own).
+- **Z21 "Patio Hill" — 30° slope** (literal degrees, confirmed with level): `cycle_custom_time_minutes: 6`, `soak_custom_time_minutes: 50` (down from 15/40 to reduce per-cycle runoff on slope). `watering_adjustment_percent: 125` (part of the catch-up boost applied 2026-05-11 — revert to 100 around 2026-06-01).
 - **Z21 in Lawn program — `run_duration: 30`** (down from 35 — accepted slight reduction in expectation that aerated soil + new cycle/soak absorbs more efficiently).
 - **Z20 "West Side"** — current monitoring baseline locked at 380 mA (was learning indefinitely; matched Z18's pattern of locked-at-382). Cosmetic; doesn't affect scheduling (fault-detection only). Z20's documented over-watering pattern (~30% more cycles than Z18/Z22 peers last summer) **remains unexplained** — no per-zone metadata exists in Hydrawise Standard mode that would distinguish Z20 from peers. Trust-the-engine-and-monitor strategy in effect.
-- **All Lawn / Lawn Early zones**: `watering_adjustment_percent: 100` (no per-zone bias). Predictive expected to ramp up per-session minutes naturally from dry-soil signals over the first 2-3 Wed/Sat cycles.
+- **All Lawn + Lawn Early zones (Z1–Z12, Z17–Z22)**: `watering_adjustment_percent: 125` as of 2026-05-11 (catch-up boost — +25% per run on top of VSS). Revert all 16 zones to 100% around 2026-06-01 when soil has recovered. Use `update_zone_watering_adjustment` × 16 in parallel to revert.
 
 ### Weather station
 
@@ -356,8 +356,10 @@ KAPA (Centennial Airport, ~4-5 miles south) — only the user's free-tier slot i
 
 - Daily Drip running Sun-Fri (covers all stressed beds quickly)
 - Z21 cycle/soak optimized for runoff (long-term, not catch-up)
-- All Lawn / Lawn Early zones at 100% — letting predictive ramp on its own
-- **Revert flag**: around 2026-06-01, revert Drip `day_pattern` back to `"1010100"` and reassess whether any zone needs further adjustment
+- **All Lawn + Lawn Early zones (Z1–Z12, Z17–Z22) boosted to 125%** as of 2026-05-11 — each run is 25% longer than the programmed time before VSS applies its multiplier. Drip zones left at 100% (already on daily catch-up schedule).
+- **Revert flags (around 2026-06-01)**:
+  1. Revert all 16 lawn zones from 125% → 100% via `update_zone_watering_adjustment` × 16
+  2. Revert Drip `day_pattern` from `"1111110"` → `"1010100"` (Sun/Tue/Thu) via `update_standard_program`
 
 ### Monitoring rhythm
 
@@ -367,7 +369,7 @@ User plans to check in **a couple of times a week** to inspect actual runs and a
 2. **Verify day patterns held.** Confirm Lawn ran Tue/Fri night → Wed/Sat AM, Lawn Early ran Wed/Sat 6:30 PM, Drip ran Sun-Fri 8 PM (during catch-up).
 3. **Compute water-savings delta.** `get_water_saving_summary` for the controller, or per-zone via `get_run_summary`. Compare normal vs scheduled minutes to confirm VSS is adjusting.
 4. **Compare to last-year pace.** Once enough data accumulates (mid-June onwards), pull `get_run_summary(zone, MONTH, May 2025)` vs `(zone, MONTH, May 2026)` to see if we're on pace.
-5. **Adjust if needed.** Lawn zones at 100% are the dial — bump to 110-115% globally if predictive isn't ramping enough, or back off if running hot.
+5. **Adjust if needed.** Lawn zones are currently at 125% — back off to 100% if running hot, or hold through June if catch-up is still needed.
 
 ### Open questions / watch items
 
@@ -387,8 +389,16 @@ To roll back, load any snapshot and run the `restore-irrigation-backup` skill �
 
 ### Reverting catch-up changes (around 2026-06-01)
 
-When beds have recovered and we want to return to the steady-state schedule:
+When beds have recovered and we want to return to the steady-state schedule, two things to revert:
 
+**1. Lawn zone adjustments — set all 16 back to 100%** (Z1–Z12, Z17–Z22 via `update_zone_watering_adjustment` × 16 in parallel):
+```
+zones: [2062869, 2062884, 2062893, 2062901, 2062916, 2062938, 2062956, 2062966,
+        2063045, 2063097, 2063107, 2063109, 2063119, 2063122, 2063127, 2063140, 2063156]
+watering_adjustment_percent: 100
+```
+
+**2. Drip day pattern — back to Sun/Tue/Thu:**
 ```
 update_standard_program(
   program_id: 6390424,  # Drip
@@ -396,5 +406,3 @@ update_standard_program(
   # plus all other current fields preserved (start_times ["20:00"], etc.)
 )
 ```
-
-No zone-level revert needed if Z21 stays at 100% adjustment through catch-up.
