@@ -346,6 +346,19 @@ The script also prints what's new (types / mutations / arguments) vs the cached 
 
 KAPA (Centennial Airport, ~4-5 miles south) — only the user's free-tier slot is in use. Previously had a Virtual Weather Station (forecast-model-based, centered on the address); switched 2026-05-10 to KAPA for real-measured triggers. Rain sensor (id 132575, wired to SEN-1) remains the local-rainfall ground-truth fallback.
 
+### Watering triggers (updated 2026-05-11)
+
+| Trigger | Value | Enabled | Notes |
+|---|---|---|---|
+| Reduce water | < **60°F**, −30% | ✅ | Lowered from 75°F — 75°F was firing all of May/June in Denver |
+| Extend water | > **90°F**, +20% | ✅ | Lowered from 97°F — Denver rarely hits 97°F; 90°F fires regularly in summer |
+| Suspend (cold) | < 50°F | ✅ | Frost protection |
+| Suspend (rain prob) | ≥ 70% | ✅ | schedule_adjustment_id 18 |
+| Suspend (wind) | > 25 mph | ✅ | schedule_adjustment_id 17 |
+| Suspend (rain amount) | 0.2 in / 1.2 in weekly | ❌ | Physical rain sensor handles this |
+| ET forecast (temp) | — | ✅ | |
+| ET forecast (rain) | — | ✅ | |
+
 ### Owner's water budget posture
 
 - Goal: **match last year's total annual water budget.** NOT chasing the 20% Stage 1 reduction goal — owner has already done major reductions in prior years and has the conservation credits.
