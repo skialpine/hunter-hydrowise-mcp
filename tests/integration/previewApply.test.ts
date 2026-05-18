@@ -155,6 +155,135 @@ describe('preview/apply contract', () => {
     expect(called).toBe(true);
   });
 
+  it.each([
+    {
+      toolName: 'start_zone',
+      args: {
+        zone_id: 3,
+        minutes: 5,
+        learn_current_from_next_run: true,
+        learn_flow_from_next_run: false,
+      },
+      overrideName: 'startZone',
+      operation: 'startZone',
+      expectedVariables: {
+        zoneId: 3,
+        markRunAsScheduled: false,
+        stackRuns: true,
+        customRunDuration: 300,
+        learnCurrentFromNextRun: true,
+        learnFlowFromNextRun: false,
+      },
+    },
+    {
+      toolName: 'stop_zone',
+      args: { zone_id: 3 },
+      overrideName: 'stopZone',
+      operation: 'stopZone',
+      expectedVariables: { zoneId: 3 },
+    },
+    {
+      toolName: 'start_all_zones',
+      args: {
+        controller_id: 7,
+        minutes: 2,
+        learn_current_from_next_run: false,
+        learn_flow_from_next_run: true,
+      },
+      overrideName: 'startAllZones',
+      operation: 'startAllZones',
+      expectedVariables: {
+        controllerId: 7,
+        markRunAsScheduled: false,
+        customRunDuration: 120,
+        learnCurrentFromNextRun: false,
+        learnFlowFromNextRun: true,
+      },
+    },
+    {
+      toolName: 'stop_all_zones',
+      args: { controller_id: 7 },
+      overrideName: 'stopAllZones',
+      operation: 'stopAllZones',
+      expectedVariables: { controllerId: 7 },
+    },
+    {
+      toolName: 'suspend_zone',
+      args: { zone_id: 3, until: '2026-06-01T12:00:00.000Z' },
+      overrideName: 'suspendZone',
+      operation: 'suspendZone',
+      expectedVariables: { zoneId: 3, until: '2026-06-01T12:00:00.000Z' },
+    },
+    {
+      toolName: 'resume_zone',
+      args: { zone_id: 3 },
+      overrideName: 'resumeZone',
+      operation: 'resumeZone',
+      expectedVariables: { zoneId: 3 },
+    },
+    {
+      toolName: 'suspend_all_zones',
+      args: { controller_id: 7, until: '2026-06-01T12:00:00.000Z' },
+      overrideName: 'suspendAllZones',
+      operation: 'suspendAllZones',
+      expectedVariables: { controllerId: 7, until: '2026-06-01T12:00:00.000Z' },
+    },
+    {
+      toolName: 'resume_all_zones',
+      args: { controller_id: 7 },
+      overrideName: 'resumeAllZones',
+      operation: 'resumeAllZones',
+      expectedVariables: { controllerId: 7 },
+    },
+  ])(
+    '$toolName preview=true returns planned variables and does NOT call the API',
+    async ({ toolName, args, overrideName, operation, expectedVariables }) => {
+      let called = false;
+      const app = makeApp({
+        [overrideName]: async () => {
+          called = true;
+          return { status: 'OK', summary: '' };
+        },
+      } as Partial<HydrawiseApi>);
+
+      const resp = await callTool(app, toolName, { ...args, preview: true });
+
+      expect(resp.result?.isError).toBeFalsy();
+      expect(called).toBe(false);
+      const payload = JSON.parse(resp.result!.content[0]!.text) as {
+        preview: boolean;
+        operation: string;
+        variables: Record<string, unknown>;
+      };
+      expect(payload.preview).toBe(true);
+      expect(payload.operation).toBe(operation);
+      expect(payload.variables).toEqual(expectedVariables);
+    },
+  );
+
+  it('start_zone preview=false invokes the API and reports the result', async () => {
+    let called = false;
+    const app = makeApp({
+      startZone: async () => {
+        called = true;
+        return { status: 'OK', summary: 'started' };
+      },
+    });
+
+    const resp = await callTool(app, 'start_zone', { zone_id: 3, minutes: 1, preview: false });
+
+    expect(resp.result?.isError).toBeFalsy();
+    expect(called).toBe(true);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean;
+      operation: string;
+      result: StatusCodeAndSummary;
+    };
+    expect(payload.preview).toBe(false);
+    expect(payload.operation).toBe('startZone');
+    expect(payload.result).toEqual({ status: 'OK', summary: 'started' });
+  });
+
   it('watering-program preview routes via the subtype-specific operation name', async () => {
     let called = false;
     const app = makeApp({

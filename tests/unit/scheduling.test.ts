@@ -119,7 +119,7 @@ describe('ZoneStandardShape', () => {
   });
 
   it('accepts payload with icon_file_id but no icon (custom uploaded image)', () => {
-    const { icon: _icon, ...withoutIcon } = validStandardPayload;
+    const withoutIcon = { ...validStandardPayload, icon: undefined };
     const result = ZoneStandardSchema.safeParse({ ...withoutIcon, icon_file_id: 890232 });
     expect(result.success).toBe(true);
     if (result.success) {
