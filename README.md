@@ -207,6 +207,15 @@ All patch tools return `{ before, after, preview }` and support `preview: true` 
 | `create_expander` / `update_expander` / `delete_expander` | Hardware expander CRUD |
 | `create_zone` / `delete_zone` | Zone CRUD (wraps `createZoneAdvanced` — the deprecated `createZone` is intentionally not wrapped) |
 
+### Events (reads + PHYSICAL ACTION acknowledge)
+
+| Tool | Purpose |
+| --- | --- |
+| `list_controller_events` | The controller's own event log (connectivity, sensor state, skipped irrigation) |
+| `list_controller_alert_events` | Only the alert-flagged entries of that log |
+| `acknowledge_event` | Acknowledge one event by its string id |
+| `acknowledge_all_events` | Acknowledge every outstanding event on a controller |
+
 ### Notes (reads + PHYSICAL ACTION writes)
 
 | Tool | Purpose |

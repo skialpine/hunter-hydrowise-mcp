@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Config } from '../../src/config.js';
+import { HydrawiseMutationError } from '../../src/errors.js';
 import { HydrawiseApi } from '../../src/hydrawise/api.js';
 import type { HydrawiseClient, Variables } from '../../src/hydrawise/client.js';
 import type { StatusCodeAndSummary } from '../../src/hydrawise/queries.js';
@@ -674,5 +675,85 @@ describe('preview/apply contract', () => {
       // icon: null covers the recipe-builder path: snapshot had icon: null, AI calls tool verbatim
     });
     expect(resp.result?.isError).toBe(true);
+  });
+});
+// ---------------------------------------------------------------------------
+// Controller events
+// ---------------------------------------------------------------------------
+
+describe('controller events', () => {
+  const event = {
+    id: 'evt-1', eventTime: '2026-07-24T00:00:00Z', severity: 'Info',
+    message: 'Controller connected', isAlert: false, actions: ['view', null],
+  };
+
+  it('list_controller_events serializes snake_case and strips null actions', async () => {
+    const app = makeApp({ getControllerEvents: async () => [event] });
+    const resp = await callTool(app, 'list_controller_events', { controller_id: 317416 });
+    expect(resp.result?.isError).toBeFalsy();
+    const out = JSON.parse(resp.result!.content[0]!.text) as Array<Record<string, unknown>>;
+    expect(out[0]).toEqual({
+      id: 'evt-1',
+      event_time: '2026-07-24T00:00:00Z',
+      severity: 'Info',
+      message: 'Controller connected',
+      is_alert: false,
+      actions: ['view'],
+    });
+  });
+
+  it('list_controller_events applies the schema defaults when length and page are omitted', async () => {
+    let seen: { length?: number; page?: number } = {};
+    const app = makeApp({
+      getControllerEvents: async (_c: number, length: number, page: number) => {
+        seen = { length, page };
+        return [];
+      },
+    } as Partial<HydrawiseApi>);
+    await callTool(app, 'list_controller_events', { controller_id: 1 });
+    expect(seen).toEqual({ length: 1000, page: 0 });
+  });
+
+  it('list_controller_alert_events defaults the cursor to an empty string', async () => {
+    let seenAfter: string | null = null;
+    const app = makeApp({
+      getControllerAlertEvents: async (_c: number, after: string) => {
+        seenAfter = after;
+        return [];
+      },
+    } as Partial<HydrawiseApi>);
+    await callTool(app, 'list_controller_alert_events', { controller_id: 1 });
+    expect(seenAfter).toBe('');
+  });
+
+  it('acknowledge_event preview=true does not dispatch', async () => {
+    let called = false;
+    const app = makeApp({
+      acknowledgeEvent: async () => {
+        called = true;
+        return true;
+      },
+    });
+    const resp = await callTool(app, 'acknowledge_event', {
+      controller_id: 317416, event_id: 'evt-1', preview: true,
+    });
+    expect(called).toBe(false);
+    const payload = JSON.parse(resp.result!.content[0]!.text) as {
+      preview: boolean; operation: string; variables: Record<string, unknown>;
+    };
+    expect(payload.preview).toBe(true);
+    expect(payload.operation).toBe('acknowledgeEvent');
+    expect(payload.variables).toEqual({ eventId: 'evt-1', controllerId: 317416 });
+  });
+
+  it('acknowledge_all_events surfaces a failed mutation as mutation_error', async () => {
+    const app = makeApp({
+      acknowledgeAllEvents: async () => {
+        throw new HydrawiseMutationError('acknowledgeAllEvents returned false for controller 1');
+      },
+    });
+    const resp = await callTool(app, 'acknowledge_all_events', { controller_id: 1 });
+    expect(resp.result?.isError).toBe(true);
+    expect(resp.result?.content[0]?.text).toMatch(/^mutation_error:/);
   });
 });

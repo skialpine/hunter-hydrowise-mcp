@@ -703,6 +703,74 @@ export const ZONE_FULL_QUERY = /* GraphQL */ `
 `;
 
 /** GraphQL: controller notes — fetched separately because controllerNotes is subscription-gated (returns a business-level GraphQL error on free accounts, which nulls the entire controller object when embedded in CONTROLLER_FIELDS). */
+/** GraphQL: the controller's event log. `length` caps the number returned and
+ * `page` walks back through history (schema defaults: 1000 and 0).
+ *
+ * Verified live 2026-07-24: entries carry severity ("Info" observed), a
+ * human-readable message, an isAlert flag, and an `actions` list. `id` is a
+ * String, not an Int, which is why acknowledge_event takes a string id. */
+export const CONTROLLER_EVENTS_QUERY = /* GraphQL */ `
+  query ControllerEvents($controllerId: Int!, $length: Int!, $page: Int!) {
+    controller(controllerId: $controllerId) {
+      events(length: $length, page: $page) {
+        id
+        eventTime
+        severity
+        message
+        isAlert
+        actions
+      }
+    }
+  }
+`;
+
+/** GraphQL: the alert-flagged slice of the event log.
+ *
+ * Note the schema names this `alerts` but it returns `[Event!]!`, NOT the
+ * `Alert` configuration type. Alert configuration objects live on Customer and
+ * Contractor and are a separate concern. The `after` argument is a non-null
+ * cursor string that defaults to "". */
+export const CONTROLLER_ALERT_EVENTS_QUERY = /* GraphQL */ `
+  query ControllerAlertEvents($controllerId: Int!, $after: String!) {
+    controller(controllerId: $controllerId) {
+      alerts(after: $after) {
+        id
+        eventTime
+        severity
+        message
+        isAlert
+        actions
+      }
+    }
+  }
+`;
+
+export interface EventRead {
+  /** String, not Int - acknowledgeEvent takes it as String!. */
+  id: string;
+  eventTime: string;
+  severity: string;
+  message: string;
+  isAlert: boolean;
+  actions: (string | null)[] | null;
+}
+
+/** GraphQL: acknowledge one event. Returns bare Boolean, so callers map
+ * false/null to an error the way the weather station mutations do. */
+export const ACKNOWLEDGE_EVENT_MUTATION = /* GraphQL */ `
+  mutation AcknowledgeEvent($eventId: String!, $controllerId: Int!) {
+    acknowledgeEvent(eventId: $eventId, controllerId: $controllerId)
+  }
+`;
+
+/** GraphQL: acknowledge every event on a controller. Scoped to a controller
+ * (unlike the unscoped cancelAll* mutations), so it is safe to expose. */
+export const ACKNOWLEDGE_ALL_EVENTS_MUTATION = /* GraphQL */ `
+  mutation AcknowledgeAllEvents($controllerId: Int!) {
+    acknowledgeAllEvents(controllerId: $controllerId)
+  }
+`;
+
 export const CONTROLLER_NOTES_QUERY = /* GraphQL */ `
   query ControllerNotes($controllerId: Int!) {
     controller(controllerId: $controllerId) {

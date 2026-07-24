@@ -93,6 +93,7 @@ openspec/              spec-driven workflow artifacts (proposals, designs, tasks
 
 ### Control — `src/tools/control.ts` (PHYSICAL ACTION)
 - `start_zone`, `stop_zone`, `start_all_zones`, `stop_all_zones`
+- `list_controller_events`, `list_controller_alert_events`, `acknowledge_event`, `acknowledge_all_events` — the controller event log. Note `Controller.alerts` is typed `[Event!]!` upstream: it returns alert-flagged events, not alert configuration, which is why the tool is named for events. `Event.id` is a String, so `acknowledge_event` takes a string id.
 - `suspend_zone`, `resume_zone`, `suspend_all_zones`, `resume_all_zones`
 
 ### Scheduling — `src/tools/scheduling.ts` (reads + PHYSICAL ACTION writes)

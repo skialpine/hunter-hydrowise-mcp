@@ -187,6 +187,11 @@ describe('streamable HTTP transport', () => {
         'get_zone_scheduled_runs',
         'get_zone_next_run',
         'get_controller_schedule',
+        // events
+        'list_controller_events',
+        'list_controller_alert_events',
+        'acknowledge_event',
+        'acknowledge_all_events',
         // patch tools
         'update_zone_run_time_in_program',
         'update_program_day_pattern',
